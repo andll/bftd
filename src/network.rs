@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use futures::future::join_all;
+use futures::future::{join_all, try_join_all};
 use futures::join;
 use parking_lot::Mutex;
 use snow::{HandshakeState, TransportState};
@@ -28,6 +28,7 @@ pub struct ConnectionPool {
     acceptor_task: JoinHandle<io::Result<()>>,
     connections: mpsc::Receiver<Connection>,
     connection_tasks: Vec<JoinHandle<()>>,
+    known_peers: Vec<PeerInfo>,
 }
 
 #[derive(Clone)] // todo - zeroize
@@ -47,9 +48,9 @@ pub struct NetworkMessage {
 }
 
 pub struct Connection {
-    sender: mpsc::Sender<NetworkMessage>,
-    receiver: mpsc::Receiver<NetworkMessage>,
-    peer: PeerInfo,
+    pub sender: mpsc::Sender<NetworkMessage>,
+    pub receiver: mpsc::Receiver<NetworkMessage>,
+    pub peer: PeerInfo,
 }
 
 struct Acceptor {
@@ -121,6 +122,7 @@ impl ConnectionPool {
             acceptor_task,
             connections,
             connection_tasks,
+            known_peers: peers,
         })
     }
 
@@ -128,6 +130,14 @@ impl ConnectionPool {
         self.connection_tasks.iter().for_each(JoinHandle::abort);
         self.acceptor_task.abort();
         let _ = join!(self.acceptor_task, join_all(self.connection_tasks));
+    }
+
+    pub fn connections(&mut self) -> &mut mpsc::Receiver<Connection> {
+        &mut self.connections
+    }
+
+    pub fn known_peers(&self) -> &Vec<PeerInfo> {
+        &self.known_peers
     }
 }
 
@@ -586,6 +596,57 @@ impl NetworkMessage {
     }
 }
 
+#[cfg(test)]
+pub struct TestConnectionPool {
+    pub pools: Vec<ConnectionPool>,
+    pub pub_keys: Vec<NoisePublicKey>,
+}
+
+#[cfg(test)]
+impl TestConnectionPool {
+    pub async fn new(n: usize, base_port: usize) -> Self {
+        let builder = snow::Builder::new("Noise_NN_25519_ChaChaPoly_BLAKE2s".parse().unwrap());
+        let key_pairs: Vec<_> = (0..n)
+            .map(|_| builder.generate_keypair().unwrap())
+            .collect();
+        let (pub_keys, priv_keys): (Vec<_>, Vec<_>) = key_pairs
+            .into_iter()
+            .map(|kp| (NoisePublicKey(kp.public), kp.private))
+            .unzip();
+
+        let peers: Vec<_> = pub_keys
+            .iter()
+            .enumerate()
+            .map(|(i, pk)| PeerInfo {
+                public_key: pk.clone(),
+                address: format!("127.0.0.1:{}", base_port + i).parse().unwrap(),
+            })
+            .collect();
+
+        let pool_futures: Vec<_> = priv_keys
+            .into_iter()
+            .zip(peers.iter())
+            .enumerate()
+            .map(|(i, (pk, peer))| ConnectionPool::start(peer.address, pk.into(), peers.clone(), i))
+            .collect();
+
+        let pools = try_join_all(pool_futures).await.unwrap();
+
+        TestConnectionPool { pools, pub_keys }
+    }
+
+    pub fn into_parts<const N: usize>(self) -> ([ConnectionPool; N], [NoisePublicKey; N]) {
+        let Ok(pools) = self.pools.try_into() else {
+            panic!()
+        };
+        let Ok(pub_keys) = self.pub_keys.try_into() else {
+            panic!()
+        };
+        (pools, pub_keys)
+    }
+}
+
+#[cfg(test)]
 mod test {
     use super::*;
     use tokio::time::timeout;
@@ -593,30 +654,9 @@ mod test {
     #[tokio::test]
     pub async fn network_test() {
         env_logger::init();
-        let builder = snow::Builder::new("Noise_NN_25519_ChaChaPoly_BLAKE2s".parse().unwrap());
-        let kp1 = builder.generate_keypair().unwrap();
-        let kp2 = builder.generate_keypair().unwrap();
+        let test_pool = TestConnectionPool::new(2, 8080).await;
 
-        let kpb1 = NoisePublicKey(kp1.public.clone());
-        let kpb2 = NoisePublicKey(kp2.public.clone());
-        let peers = vec![
-            PeerInfo {
-                address: "127.0.0.1:8080".parse().unwrap(),
-                public_key: kpb1.clone(),
-            },
-            PeerInfo {
-                address: "127.0.0.1:8081".parse().unwrap(),
-                public_key: kpb2.clone(),
-            },
-        ];
-
-        let mut pool1 =
-            ConnectionPool::start("127.0.0.1:8080", kp1.private.into(), peers.clone(), 0)
-                .await
-                .unwrap();
-        let mut pool2 = ConnectionPool::start("127.0.0.1:8081", kp2.private.into(), peers, 1)
-            .await
-            .unwrap();
+        let ([mut pool1, mut pool2], [kpb1, kpb2]) = test_pool.into_parts();
 
         let c1 = timeout(Duration::from_secs(5), pool1.connections.recv())
             .await

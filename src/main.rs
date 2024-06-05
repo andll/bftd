@@ -2,6 +2,7 @@ use crate::network::{ConnectionPool, NoisePublicKey, PeerInfo};
 use std::time::Duration;
 
 mod network;
+mod rpc;
 
 #[tokio::main]
 async fn main() {
