@@ -8,7 +8,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
 // todo task accounting / spawning to avoid deadlocks
-// stream buffer control
+// todo stream buffer control test
 pub struct NetworkRpc {
     handle: JoinHandle<()>,
     peer_task_senders: HashMap<NoisePublicKey, mpsc::Sender<PeerRpcRequest>>,
@@ -26,8 +26,11 @@ pub enum RpcMessage {
     RpcStreamRequest(u64, NetworkRequest),
     RpcResponse(u64, NetworkResponse),
     RpcStreamItem(u64, NetworkResponse),
+    RpcStreamBufferAck(u64 /*rpc id*/, u64 /*position ack*/),
     RpcStreamEOF(u64),
 }
+
+const STREAM_BUFFER_SIZE: u64 = 128 * 1024;
 
 enum PeerRpcRequest {
     Rpc(NetworkRequest, oneshot::Sender<RpcResult<NetworkResponse>>),
@@ -161,9 +164,12 @@ impl PeerTask {
         let mut tag = 0u64;
         let mut rpc_requests: HashMap<u64, oneshot::Sender<RpcResult<NetworkResponse>>> =
             HashMap::new();
-        let mut rpc_stream_requests: HashMap<u64, mpsc::Sender<RpcResult<NetworkResponse>>> =
-            HashMap::new();
-        let mut tasks = Vec::new();
+        let mut inbound_stream_requests: HashMap<
+            u64,
+            (u64, mpsc::Sender<RpcResult<NetworkResponse>>),
+        > = HashMap::new();
+        // todo - wait / clean tasks
+        let mut outbound_streams = HashMap::new();
         loop {
             select! {
                 message = self.connection.receiver.recv() => {
@@ -180,13 +186,15 @@ impl PeerTask {
                         }
                         RpcMessage::RpcStreamRequest(tag, request) => {
                             let stream = self.peer_task_data.router.stream_rpc(request);
+                            let (ack_sender, ack_receiver) = mpsc::channel(10);
                             let stream_task = StreamRpcResponseTask {
                                 stream,
+                                ack_receiver,
                                 tag,
                                 network_sender: self.connection.sender.clone(),
                             };
                             let stream_task = tokio::spawn(stream_task.run());
-                            tasks.push(stream_task);
+                            outbound_streams.insert(tag, (ack_sender, stream_task));
                         }
                         RpcMessage::RpcResponse(tag, resp) => {
                                 let ch = rpc_requests.remove(&tag);
@@ -194,12 +202,26 @@ impl PeerTask {
                                 ch.send(Ok(resp)).ok();
                             }
                         RpcMessage::RpcStreamItem(tag, item) => {
-                                let ch = rpc_stream_requests.get_mut(&tag);
-                                let Some(ch) = ch else {return Err(RpcError::UnmatchedResponse)};
-                                ch.send(Ok(item)).await.ok(); // Continue to receive stream?
+                                let ch = inbound_stream_requests.get_mut(&tag);
+                                let Some((bytes, ch)) = ch else {return Err(RpcError::UnmatchedResponse)};
+                                *bytes = if let Some(bytes) = bytes.checked_add(item.0.len() as u64) {
+                                    bytes
+                                } else {
+                                    log::warn!("Terminating connection to {} after receiving absurd amount of bytes in a stream", self.connection.peer.public_key);
+                                    return Ok(());
+                                };
+                                Self::send_message(&mut self.connection.sender, &RpcMessage::RpcStreamBufferAck(tag, *bytes)).await?;
+                                ch.send(Ok(item)).await.ok(); // Continue to receive stream(receiver disconnected)?
                             }
+                        RpcMessage::RpcStreamBufferAck(tag, bytes) => {
+                            let Some((ack_sender, _)) = outbound_streams.get_mut(&tag) else {
+                                // todo cleanup tasks
+                                return Err(RpcError::UnmatchedAck)
+                            };
+                            ack_sender.send(bytes).await.ok(); // Continue to receive stream(receiver disconnected)?
+                        }
                         RpcMessage::RpcStreamEOF(tag) => {
-                                rpc_stream_requests.remove(&tag);
+                                inbound_stream_requests.remove(&tag);
                             }
                     }
                 }
@@ -213,7 +235,7 @@ impl PeerTask {
                         }
                         PeerRpcRequest::StreamRpc(request, ch) => {
                             tag += 1;
-                            rpc_stream_requests.insert(tag, ch);
+                            inbound_stream_requests.insert(tag, (0, ch));
                             Self::send_message(&mut self.connection.sender, &RpcMessage::RpcStreamRequest(tag, request)).await?;
                         }
                     }
@@ -241,24 +263,43 @@ impl PeerTask {
 
 struct StreamRpcResponseTask {
     stream: mpsc::Receiver<NetworkResponse>,
+    ack_receiver: mpsc::Receiver<u64>,
     network_sender: mpsc::Sender<NetworkMessage>,
     tag: u64,
 }
 
 impl StreamRpcResponseTask {
     async fn run(mut self) -> RpcResult<()> {
-        while let Some(item) = self.stream.recv().await {
-            PeerTask::send_message(
-                &mut self.network_sender,
-                &RpcMessage::RpcStreamItem(self.tag, item),
-            )
-            .await?;
+        let mut sent = 0u64;
+        let mut acked = 0u64;
+        loop {
+            select! {
+                item = self.stream.recv(), if sent.saturating_sub(acked) < STREAM_BUFFER_SIZE  =>{
+                    if let Some(item) = item {
+                        sent += item.0.len() as u64; // todo check overflow
+                        PeerTask::send_message(
+                            &mut self.network_sender,
+                            &RpcMessage::RpcStreamItem(self.tag, item),
+                        )
+                        .await?;
+                    } else {
+                        PeerTask::send_message(
+                            &mut self.network_sender,
+                            &RpcMessage::RpcStreamEOF(self.tag),
+                        )
+                        .await?;
+                        break;
+                    }
+                }
+                ack = self.ack_receiver.recv() => {
+                    if let Some(ack) = ack {
+                        acked = ack;
+                    } else {
+                        break;
+                    }
+                }
+            }
         }
-        PeerTask::send_message(
-            &mut self.network_sender,
-            &RpcMessage::RpcStreamEOF(self.tag),
-        )
-        .await?;
         Ok(())
     }
 }
@@ -272,6 +313,7 @@ pub enum RpcError {
     PeerNotFound,
     NetworkShutdown,
     UnmatchedResponse,
+    UnmatchedAck,
 }
 
 impl From<bincode::Error> for RpcError {

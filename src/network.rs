@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use futures::future::{join_all, try_join_all};
+use futures::future::join_all;
 use futures::join;
 use parking_lot::Mutex;
 use snow::{HandshakeState, TransportState};
@@ -630,7 +630,7 @@ impl TestConnectionPool {
             .map(|(i, (pk, peer))| ConnectionPool::start(peer.address, pk.into(), peers.clone(), i))
             .collect();
 
-        let pools = try_join_all(pool_futures).await.unwrap();
+        let pools = futures::future::try_join_all(pool_futures).await.unwrap();
 
         TestConnectionPool { pools, pub_keys }
     }
