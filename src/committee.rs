@@ -50,6 +50,7 @@ impl Committee {
         let Some(author) = self.validators.get(author.0 as usize) else {
             bail!("Validator not found")
         };
+        // todo - other validity (thr clock etc)
         Block::from_bytes(data, &Blake2Hasher, &author.consensus_key)
     }
 }

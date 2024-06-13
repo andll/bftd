@@ -10,16 +10,16 @@ pub struct Block {
     data: Bytes,
 }
 
-#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq)]
+#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash)]
 pub struct BlockReference {
     round: Round,
     author: ValidatorIndex,
     hash: BlockHash,
 }
 
-#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq)]
+#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash)]
 pub struct ValidatorIndex(pub u64);
-#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq)]
+#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash)]
 pub struct Round(pub u64);
 
 const SIGNATURE_LENGTH: usize = 64;
@@ -28,7 +28,7 @@ pub const MAX_PARENTS: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq)]
 pub struct BlockSignature(pub [u8; SIGNATURE_LENGTH]);
-#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq)]
+#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash)]
 pub struct BlockHash(pub [u8; BLOCK_HASH_LENGTH]);
 
 impl Block {
@@ -233,8 +233,9 @@ impl BlockReference {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
+    use std::sync::Arc;
 
     #[test]
     pub fn test_block_ser() {
@@ -284,5 +285,27 @@ mod tests {
         fn check_signature(&self, bytes: &[u8], signature: &BlockSignature) -> bool {
             signature.0 == *self
         }
+    }
+
+    const BR_BLOCK_HASH: [u8; BLOCK_HASH_LENGTH] = [2u8; BLOCK_HASH_LENGTH];
+    const BR_SIGNATURE: [u8; SIGNATURE_LENGTH] = [3u8; SIGNATURE_LENGTH];
+
+    pub fn br(author: u64, round: u64) -> BlockReference {
+        BlockReference {
+            author: ValidatorIndex(author),
+            round: Round(round),
+            hash: BlockHash(BR_BLOCK_HASH),
+        }
+    }
+
+    pub fn blk(author: u64, round: u64, parents: Vec<BlockReference>) -> Arc<Block> {
+        Arc::new(Block::new(
+            Round(round),
+            ValidatorIndex(author),
+            &[],
+            parents,
+            &BR_SIGNATURE,
+            &BR_BLOCK_HASH,
+        ))
     }
 }
