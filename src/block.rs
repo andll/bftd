@@ -20,7 +20,7 @@ pub struct ValidatorIndex(pub u64);
 #[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq)]
 pub struct Round(pub u64);
 
-const SIGNATURE_LENGTH: usize = 32;
+const SIGNATURE_LENGTH: usize = 64;
 const BLOCK_HASH_LENGTH: usize = 32;
 
 #[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq)]
