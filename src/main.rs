@@ -2,7 +2,7 @@ use crate::network::{ConnectionPool, NoisePublicKey, PeerInfo};
 use std::time::Duration;
 
 mod block;
-mod block_store;
+mod block_manager;
 mod committee;
 mod core;
 mod crypto;

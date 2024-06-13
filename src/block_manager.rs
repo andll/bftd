@@ -2,12 +2,12 @@ use crate::block::{Block, BlockReference};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-pub struct BlockStore<S> {
+pub struct BlockManager<S> {
     missing_inverse: HashMap<BlockReference, HashMap<BlockReference, Arc<Block>>>,
     store: S,
 }
 
-pub trait Store {
+pub trait BlockStore {
     fn put(&self, block: Arc<Block>);
     fn get(&self, key: &BlockReference) -> Option<Arc<Block>>;
     fn exists(&self, key: &BlockReference) -> bool {
@@ -15,7 +15,11 @@ pub trait Store {
     }
 }
 
-impl<S: Store> BlockStore<S> {
+pub struct AddBlockResult {
+    pub added: Vec<Arc<Block>>,
+}
+
+impl<S: BlockStore> BlockManager<S> {
     pub fn new(store: S) -> Self {
         Self {
             store,
@@ -23,7 +27,8 @@ impl<S: Store> BlockStore<S> {
         }
     }
 
-    pub fn try_add_block(&mut self, block: Arc<Block>) {
+    pub fn add_block(&mut self, block: Arc<Block>) -> AddBlockResult {
+        let mut added = Vec::new();
         let mut blocks = HashMap::new();
         blocks.insert(*block.reference(), block);
         while let Some(block) = blocks.keys().next().copied() {
@@ -43,6 +48,7 @@ impl<S: Store> BlockStore<S> {
                         blocks.insert(k, v);
                     }
                 }
+                added.push(block.clone());
                 self.store.put(block);
             } else {
                 for parent in missing {
@@ -51,6 +57,13 @@ impl<S: Store> BlockStore<S> {
                 }
             }
         }
+        AddBlockResult { added }
+    }
+}
+
+impl AddBlockResult {
+    pub fn assert_added(&self, v: &BlockReference) {
+        assert!(self.added.iter().any(|b| b.reference() == v));
     }
 }
 
@@ -59,26 +72,31 @@ mod tests {
     use super::*;
     use crate::block::tests::{blk, br};
     use std::cell::RefCell;
+    use std::collections::HashSet;
 
     #[test]
     pub fn block_store_test() {
         let store = RefCell::new(HashMap::new());
-        let mut block_store = BlockStore::new(store);
-        block_store.try_add_block(blk(1, 1, vec![br(0, 0), br(1, 0)]));
+        let mut block_store = BlockManager::new(store);
+        let r = block_store.add_block(blk(1, 1, vec![br(0, 0), br(1, 0)]));
+        r.assert_empty();
         assert_eq!(block_store.store.borrow().len(), 0);
-        block_store.try_add_block(blk(2, 2, vec![br(0, 0), br(1, 1)]));
+        let r = block_store.add_block(blk(2, 2, vec![br(0, 0), br(1, 1)]));
+        r.assert_empty();
         assert_eq!(block_store.store.borrow().len(), 0);
-        block_store.try_add_block(blk(1, 0, vec![]));
+        let r = block_store.add_block(blk(1, 0, vec![]));
+        r.assert_added_multi(vec![br(1, 0)]);
         assert_eq!(block_store.store.borrow().len(), 1);
         assert!(block_store.store.borrow().contains_key(&br(1, 0)));
-        block_store.try_add_block(blk(0, 0, vec![]));
+        let r = block_store.add_block(blk(0, 0, vec![]));
+        r.assert_added_multi(vec![br(0, 0), br(1, 1), br(2, 2)]);
         assert_eq!(block_store.store.borrow().len(), 4);
         assert!(block_store.store.borrow().contains_key(&br(0, 0)));
         assert!(block_store.store.borrow().contains_key(&br(1, 1)));
         assert!(block_store.store.borrow().contains_key(&br(2, 2)));
     }
 
-    impl Store for RefCell<HashMap<BlockReference, Arc<Block>>> {
+    impl BlockStore for RefCell<HashMap<BlockReference, Arc<Block>>> {
         fn put(&self, block: Arc<Block>) {
             self.borrow_mut().insert(*block.reference(), block);
         }
@@ -89,6 +107,21 @@ mod tests {
 
         fn exists(&self, key: &BlockReference) -> bool {
             self.borrow().contains_key(key)
+        }
+    }
+
+    impl AddBlockResult {
+        #[track_caller]
+        pub fn assert_empty(&self) {
+            assert!(self.added.is_empty())
+        }
+
+        #[track_caller]
+        pub fn assert_added_multi(&self, v: Vec<BlockReference>) {
+            assert_eq!(
+                HashSet::<BlockReference>::from_iter(self.added.iter().map(|b| *b.reference())),
+                HashSet::from_iter(v.into_iter())
+            )
         }
     }
 }

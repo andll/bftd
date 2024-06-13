@@ -4,7 +4,9 @@ use crate::NoisePublicKey;
 use anyhow::{bail, ensure};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
+#[cfg(test)]
+use std::net::{IpAddr, Ipv4Addr};
 use std::ops::AddAssign;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
