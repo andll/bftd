@@ -5,10 +5,12 @@ use bytes::{BufMut, Bytes, BytesMut};
 pub struct Block {
     reference: BlockReference,
     signature: BlockSignature,
+    parents: Vec<BlockReference>,
+    payload_offset: usize,
     data: Bytes,
 }
 
-#[derive(Clone, Copy, PartialOrd, PartialEq, Ord, Eq)]
+#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq)]
 pub struct BlockReference {
     round: Round,
     author: ValidatorIndex,
@@ -22,6 +24,7 @@ pub struct Round(pub u64);
 
 const SIGNATURE_LENGTH: usize = 64;
 const BLOCK_HASH_LENGTH: usize = 32;
+pub const MAX_PARENTS: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq)]
 pub struct BlockSignature(pub [u8; SIGNATURE_LENGTH]);
@@ -33,7 +36,8 @@ impl Block {
     const SIGNATURE_OFFSET: usize = Self::HASH_OFFSET + BLOCK_HASH_LENGTH;
     const ROUND_OFFSET: usize = Self::SIGNATURE_OFFSET + SIGNATURE_LENGTH;
     const AUTHOR_OFFSET: usize = Self::ROUND_OFFSET + 8;
-    const PAYLOAD_OFFSET: usize = Self::AUTHOR_OFFSET + 8;
+    const PARENTS_COUNT_OFFSET: usize = Self::AUTHOR_OFFSET + 8;
+    const PARENTS_OFFSET: usize = Self::PARENTS_COUNT_OFFSET + 4;
 
     pub fn reference(&self) -> &BlockReference {
         &self.reference
@@ -44,15 +48,19 @@ impl Block {
     }
 
     pub fn payload(&self) -> &[u8] {
-        &self.data[Self::PAYLOAD_OFFSET..]
+        &self.data[self.payload_offset..]
     }
 
     pub fn data(&self) -> &Bytes {
         &self.data
     }
 
+    pub fn parents(&self) -> &[BlockReference] {
+        &self.parents
+    }
+
     pub fn author_from_bytes(data: &[u8]) -> anyhow::Result<ValidatorIndex> {
-        ensure!(data.len() >= Self::PAYLOAD_OFFSET, "Block too small");
+        ensure!(data.len() >= Self::PARENTS_OFFSET, "Block too small");
         Ok(ValidatorIndex(u64::from_le_bytes(
             data[Self::AUTHOR_OFFSET..Self::AUTHOR_OFFSET + 8]
                 .try_into()
@@ -64,13 +72,21 @@ impl Block {
         round: Round,
         author: ValidatorIndex,
         payload: &[u8],
+        parents: Vec<BlockReference>,
         signer: &impl Signer,
         hasher: &impl Hasher,
     ) -> Self {
-        let mut data = BytesMut::with_capacity(payload.len() + Self::PAYLOAD_OFFSET);
+        assert!(parents.len() < MAX_PARENTS);
+        let parents_len = BlockReference::SIZE * parents.len();
+        let payload_offset = Self::PARENTS_OFFSET + parents_len;
+        let mut data = BytesMut::with_capacity(payload.len() + payload_offset);
         data.put_bytes(0, Self::ROUND_OFFSET);
         data.put_u64_le(round.0);
         data.put_u64_le(author.0);
+        data.put_u32_le(parents.len() as u32);
+        for parent in &parents {
+            parent.write(&mut data);
+        }
         data.put_slice(payload);
         let signature = signer.sign_bytes(&data[Self::ROUND_OFFSET..]);
         data[Self::SIGNATURE_OFFSET..Self::SIGNATURE_OFFSET + SIGNATURE_LENGTH]
@@ -86,6 +102,8 @@ impl Block {
                 hash,
             },
             signature,
+            parents,
+            payload_offset,
             data,
         }
     }
@@ -95,8 +113,8 @@ impl Block {
         hasher: &impl Hasher,
         verifier: &impl SignatureVerifier,
     ) -> anyhow::Result<Self> {
-        ensure!(data.len() >= Self::PAYLOAD_OFFSET, "Block too small");
-        let unverified = Self::from_bytes_unchecked(data);
+        ensure!(data.len() >= Self::PARENTS_OFFSET, "Block too small");
+        let unverified = Self::from_bytes_unchecked(data)?;
         unverified.verify(hasher, verifier)
     }
 
@@ -117,8 +135,8 @@ impl Block {
         Ok(self)
     }
 
-    pub fn from_bytes_unchecked(data: Bytes) -> Self {
-        assert!(data.len() >= Self::PAYLOAD_OFFSET);
+    pub fn from_bytes_unchecked(data: Bytes) -> anyhow::Result<Self> {
+        assert!(data.len() >= Self::PARENTS_OFFSET);
         let hash = BlockHash(
             data[Self::HASH_OFFSET..Self::HASH_OFFSET + BLOCK_HASH_LENGTH]
                 .try_into()
@@ -139,20 +157,80 @@ impl Block {
                 .try_into()
                 .unwrap(),
         ));
+        let parents_count = u32::from_le_bytes(
+            data[Self::PARENTS_COUNT_OFFSET..Self::PARENTS_COUNT_OFFSET + 4]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        ensure!(
+            parents_count < MAX_PARENTS,
+            "Block has too many parents {parents_count}"
+        );
+        ensure!(
+            data.len() >= Self::PARENTS_OFFSET + parents_count * BlockReference::SIZE,
+            "Block does not list all parents"
+        );
+        let mut parents = Vec::with_capacity(parents_count);
+        let mut offset = Self::PARENTS_OFFSET;
+        for _ in 0..parents_count {
+            let parent = BlockReference::from_bytes(
+                &data[offset..offset + BlockReference::SIZE]
+                    .try_into()
+                    .unwrap(),
+            );
+            parents.push(parent);
+            offset += BlockReference::SIZE;
+        }
         let reference = BlockReference {
             round,
             author,
             hash,
         };
-        Self {
+        Ok(Self {
             reference,
             signature,
+            parents,
+            payload_offset: offset,
             data,
-        }
+        })
     }
 }
 
-impl BlockReference {}
+impl BlockReference {
+    const ROUND_OFFSET: usize = 0;
+    const AUTHOR_OFFSET: usize = Self::ROUND_OFFSET + 8;
+    const HASH_OFFSET: usize = Self::AUTHOR_OFFSET + 8;
+    pub const SIZE: usize = Self::HASH_OFFSET + BLOCK_HASH_LENGTH;
+
+    pub fn from_bytes(bytes: &[u8; Self::SIZE]) -> Self {
+        let round = Round(u64::from_le_bytes(
+            bytes[Self::ROUND_OFFSET..Self::ROUND_OFFSET + 8]
+                .try_into()
+                .unwrap(),
+        ));
+        let author = ValidatorIndex(u64::from_le_bytes(
+            bytes[Self::AUTHOR_OFFSET..Self::AUTHOR_OFFSET + 8]
+                .try_into()
+                .unwrap(),
+        ));
+        let hash = BlockHash(
+            bytes[Self::HASH_OFFSET..Self::HASH_OFFSET + BLOCK_HASH_LENGTH]
+                .try_into()
+                .unwrap(),
+        );
+        Self {
+            round,
+            author,
+            hash,
+        }
+    }
+
+    pub fn write(&self, buf: &mut BytesMut) {
+        buf.put_u64_le(self.round.0);
+        buf.put_u64_le(self.author.0);
+        buf.put_slice(&self.hash.0);
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -165,13 +243,20 @@ mod tests {
         let payload = [1, 2, 3];
         let signature = [1u8; SIGNATURE_LENGTH];
         let hash = [2u8; BLOCK_HASH_LENGTH];
-        let block = Block::new(round, author, &payload, &signature, &hash);
+        let parent = BlockReference {
+            round: Round(15),
+            author: ValidatorIndex(16),
+            hash: BlockHash([3u8; BLOCK_HASH_LENGTH]),
+        };
+        let block = Block::new(round, author, &payload, vec![parent], &signature, &hash);
 
-        let block2 = Block::from_bytes_unchecked(block.data().clone());
+        let block2 = Block::from_bytes_unchecked(block.data().clone()).unwrap();
         assert_eq!(block2.reference().author, author);
         assert_eq!(block2.reference().round, round);
         assert_eq!(block2.reference().hash.0, hash);
         assert_eq!(block2.signature().0, signature);
+        assert_eq!(block2.parents().len(), 1);
+        assert_eq!(block2.parents().get(0).unwrap(), &parent);
         assert_eq!(block2.payload(), &payload);
 
         assert!(Block::from_bytes(block.data().clone(), &hash, &signature).is_ok());

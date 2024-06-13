@@ -10,8 +10,8 @@ use std::net::SocketAddr;
 pub struct Committee {
     validators: Vec<ValidatorInfo>,
     total_stake: Stake,
-    f_threshold: Stake, // The minimum stake required for validity(f+1)
-    f2_threshold: Stake,   // The minimum stake required for quorum(2f+1)
+    f_threshold: Stake,  // The minimum stake required for validity(f+1)
+    f2_threshold: Stake, // The minimum stake required for quorum(2f+1)
 }
 
 const MAX_COMMITTEE: u64 = 1024 * 1024;
