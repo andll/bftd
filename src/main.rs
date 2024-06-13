@@ -1,6 +1,8 @@
 use crate::network::{ConnectionPool, NoisePublicKey, PeerInfo};
 use std::time::Duration;
 
+mod block;
+mod crypto;
 mod network;
 mod rpc;
 

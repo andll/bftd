@@ -17,3 +17,7 @@ async-trait = "0.1.71"
 serde = { version = "1.0.166", features = ["derive"] }
 bincode = "1.3.3"
 anyhow = "1.0.71"
+blake2 = "0.10.6"
+
+[dev-dependencies]
+rand = "0.8.5"
