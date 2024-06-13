@@ -51,6 +51,15 @@ impl Block {
         &self.data
     }
 
+    pub fn author_from_bytes(data: &[u8]) -> anyhow::Result<ValidatorIndex> {
+        ensure!(data.len() >= Self::PAYLOAD_OFFSET, "Block too small");
+        Ok(ValidatorIndex(u64::from_le_bytes(
+            data[Self::AUTHOR_OFFSET..Self::AUTHOR_OFFSET + 8]
+                .try_into()
+                .unwrap(),
+        )))
+    }
+
     pub fn new(
         round: Round,
         author: ValidatorIndex,

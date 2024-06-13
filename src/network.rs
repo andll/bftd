@@ -2,6 +2,7 @@ use bytes::Bytes;
 use futures::future::join_all;
 use futures::join;
 use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
 use snow::{HandshakeState, TransportState};
 use std::collections::HashMap;
 use std::fmt;
@@ -40,7 +41,7 @@ pub struct PeerInfo {
     pub public_key: NoisePublicKey,
 }
 
-#[derive(Eq, PartialEq, Hash, Clone)]
+#[derive(Eq, PartialEq, Hash, Clone, Serialize, Deserialize)]
 pub struct NoisePublicKey(pub Vec<u8>);
 
 pub struct NetworkMessage {

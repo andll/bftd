@@ -1,6 +1,7 @@
 use crate::block::{BlockHash, BlockSignature};
 use blake2::{Blake2b, Digest};
 use ed25519_consensus::{SigningKey, VerificationKey};
+use serde::{Deserialize, Serialize};
 
 pub trait Signer {
     fn sign_bytes(&self, bytes: &[u8]) -> BlockSignature;
@@ -17,6 +18,7 @@ pub trait Hasher {
 pub struct Blake2Hasher;
 
 pub struct Ed25519Signer(SigningKey);
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Ed25519Verifier(VerificationKey);
 
 impl Signer for Ed25519Signer {
