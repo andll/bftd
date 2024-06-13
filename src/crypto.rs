@@ -39,3 +39,11 @@ impl Hasher for Blake2Hasher {
         BlockHash(Blake2b::digest(bytes).into())
     }
 }
+
+#[cfg(test)]
+impl Default for Ed25519Verifier {
+    fn default() -> Self {
+        let k = SigningKey::from([0; 32]).verification_key();
+        Ed25519Verifier(k)
+    }
+}

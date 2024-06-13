@@ -342,7 +342,7 @@ mod test {
 
     #[tokio::test]
     pub async fn rpc_test() {
-        env_logger::init();
+        env_logger::try_init().ok();
         let test_pool = TestConnectionPool::new(2, 8180).await;
 
         let ([pool1, pool2], [kpb1, kpb2]) = test_pool.into_parts();

@@ -1,23 +1,24 @@
-use crate::block::Block;
+use crate::block::{Block, ValidatorIndex};
 use crate::crypto::{Blake2Hasher, Ed25519Verifier};
 use crate::NoisePublicKey;
 use anyhow::{bail, ensure};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::ops::AddAssign;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Committee {
     validators: Vec<ValidatorInfo>,
     total_stake: Stake,
-    f_threshold: Stake,  // The minimum stake required for validity(f+1)
-    f2_threshold: Stake, // The minimum stake required for quorum(2f+1)
+    pub f_threshold: Stake,  // The minimum stake required for validity(f+1)
+    pub f2_threshold: Stake, // The minimum stake required for quorum(2f+1)
 }
 
 const MAX_COMMITTEE: u64 = 1024 * 1024;
 
 #[derive(Clone, Debug, Serialize, Deserialize, Copy)]
-pub struct Stake(u64);
+pub struct Stake(pub u64);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidatorInfo {
@@ -52,5 +53,38 @@ impl Committee {
         };
         // todo - other validity (thr clock etc)
         Block::from_bytes(data, &Blake2Hasher, &author.consensus_key)
+    }
+
+    pub fn get_stake(&self, index: ValidatorIndex) -> Stake {
+        self.validators
+            .get(index.0 as usize)
+            .expect("Authority not found")
+            .stake
+    }
+}
+
+impl Stake {
+    pub const ZERO: Stake = Stake(0);
+}
+
+impl AddAssign for Stake {
+    fn add_assign(&mut self, rhs: Self) {
+        self.0 += rhs.0;
+    }
+}
+
+#[cfg(test)]
+impl Committee {
+    pub fn new_test(v: Vec<u64>) -> Self {
+        Self::new(
+            v.into_iter()
+                .map(|stake| ValidatorInfo {
+                    consensus_key: Default::default(),
+                    network_key: Default::default(),
+                    network_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
+                    stake: Stake(stake),
+                })
+                .collect(),
+        )
     }
 }

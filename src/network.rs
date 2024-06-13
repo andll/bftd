@@ -41,7 +41,7 @@ pub struct PeerInfo {
     pub public_key: NoisePublicKey,
 }
 
-#[derive(Eq, PartialEq, Hash, Clone, Serialize, Deserialize)]
+#[derive(Eq, PartialEq, Hash, Clone, Serialize, Deserialize, Default)]
 pub struct NoisePublicKey(pub Vec<u8>);
 
 pub struct NetworkMessage {
@@ -654,7 +654,7 @@ mod test {
 
     #[tokio::test]
     pub async fn network_test() {
-        env_logger::init();
+        env_logger::try_init().ok();
         let test_pool = TestConnectionPool::new(2, 8080).await;
 
         let ([mut pool1, mut pool2], [kpb1, kpb2]) = test_pool.into_parts();

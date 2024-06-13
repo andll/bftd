@@ -4,9 +4,11 @@ use std::time::Duration;
 mod block;
 mod block_store;
 mod committee;
+mod core;
 mod crypto;
 mod network;
 mod rpc;
+mod threshold_clock;
 
 #[tokio::main]
 async fn main() {

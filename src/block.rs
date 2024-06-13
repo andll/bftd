@@ -12,9 +12,9 @@ pub struct Block {
 
 #[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash)]
 pub struct BlockReference {
-    round: Round,
-    author: ValidatorIndex,
-    hash: BlockHash,
+    pub round: Round,
+    pub author: ValidatorIndex,
+    pub hash: BlockHash,
 }
 
 #[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash)]
@@ -229,6 +229,19 @@ impl BlockReference {
         buf.put_u64_le(self.round.0);
         buf.put_u64_le(self.author.0);
         buf.put_slice(&self.hash.0);
+    }
+}
+
+impl Round {
+    pub const ZERO: Round = Round(0);
+
+    pub fn previous(&self) -> Self {
+        assert!(self.0 > 0);
+        Self(self.0 - 1)
+    }
+
+    pub fn next(&self) -> Self {
+        Self(self.0 + 1)
     }
 }
 
