@@ -30,7 +30,9 @@ pub const MAX_PARENTS: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq)]
 pub struct BlockSignature(pub [u8; SIGNATURE_LENGTH]);
-#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize, Default,
+)]
 pub struct BlockHash(pub [u8; BLOCK_HASH_LENGTH]);
 
 impl Block {
@@ -59,6 +61,18 @@ impl Block {
 
     pub fn parents(&self) -> &[BlockReference] {
         &self.parents
+    }
+
+    pub fn author(&self) -> ValidatorIndex {
+        self.reference.author
+    }
+
+    pub fn round(&self) -> Round {
+        self.reference.round
+    }
+
+    pub fn block_hash(&self) -> &BlockHash {
+        &self.reference.hash
     }
 
     pub fn author_from_bytes(data: &[u8]) -> anyhow::Result<ValidatorIndex> {

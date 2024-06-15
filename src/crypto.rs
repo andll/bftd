@@ -47,3 +47,15 @@ impl Default for Ed25519Verifier {
         Ed25519Verifier(k)
     }
 }
+
+impl From<VerificationKey> for Ed25519Verifier {
+    fn from(value: VerificationKey) -> Self {
+        Self(value)
+    }
+}
+
+impl From<SigningKey> for Ed25519Signer {
+    fn from(value: SigningKey) -> Self {
+        Self(value)
+    }
+}

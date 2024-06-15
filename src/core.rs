@@ -22,6 +22,27 @@ pub trait ProposalMaker {
 }
 
 impl<S: Signer, B: BlockStore> Core<S, B> {
+    pub fn new(
+        signer: S,
+        block_store: B,
+        committee: Arc<Committee>,
+        index: ValidatorIndex,
+    ) -> Self {
+        let block_manager = BlockManager::new(block_store);
+        let last_proposed_round = Round::ZERO; // todo load
+        let proposer_clock = ThresholdClockAggregator::new(last_proposed_round);
+        let parents_accumulator = ParentsAccumulator::new();
+        Self {
+            signer,
+            block_manager,
+            proposer_clock,
+            committee,
+            last_proposed_round,
+            index,
+            parents_accumulator,
+        }
+    }
+
     /// returns new missing blocks
     pub fn add_block(&mut self, block: Arc<Block>) -> Vec<BlockReference> {
         let result = self.block_manager.add_block(block);

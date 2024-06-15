@@ -74,6 +74,12 @@ impl Committee {
             .stake
     }
 
+    pub fn validator(&self, index: ValidatorIndex) -> &ValidatorInfo {
+        self.validators
+            .get(index.0 as usize)
+            .expect("Validator not found")
+    }
+
     pub fn enumerate_validators(&self) -> impl Iterator<Item = (ValidatorIndex, &ValidatorInfo)> {
         self.validators
             .iter()

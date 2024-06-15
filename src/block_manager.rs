@@ -1,6 +1,7 @@
-use crate::block::{Block, BlockReference, Round, ValidatorIndex};
+use crate::block::{Block, BlockHash, BlockReference, Round, ValidatorIndex};
 use std::collections::hash_map::Entry;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::ops::Deref;
 use std::sync::Arc;
 
 pub struct BlockManager<S> {
@@ -13,9 +14,7 @@ pub trait BlockStore: Send + Sync + 'static {
     fn get(&self, key: &BlockReference) -> Option<Arc<Block>>;
     fn get_own(&self, validator: ValidatorIndex, round: Round) -> Option<Arc<Block>>;
     fn last_known_round(&self, validator: ValidatorIndex) -> Round;
-    fn exists(&self, key: &BlockReference) -> bool {
-        self.get(key).is_some()
-    }
+    fn exists(&self, key: &BlockReference) -> bool;
 }
 
 pub struct AddBlockResult {
@@ -157,5 +156,73 @@ mod tests {
                 HashSet::from_iter(v.into_iter())
             )
         }
+    }
+}
+
+pub type MemoryBlockStore =
+    parking_lot::Mutex<HashMap<ValidatorIndex, BTreeMap<(Round, BlockHash), Arc<Block>>>>;
+
+impl BlockStore for MemoryBlockStore {
+    fn put(&self, block: Arc<Block>) {
+        self.lock()
+            .entry(block.author())
+            .or_default()
+            .insert((block.round(), *block.block_hash()), block);
+    }
+
+    fn get(&self, key: &BlockReference) -> Option<Arc<Block>> {
+        self.lock()
+            .get(&key.author)?
+            .get(&(key.round, key.hash))
+            .cloned()
+    }
+
+    fn get_own(&self, validator: ValidatorIndex, round: Round) -> Option<Arc<Block>> {
+        Some(
+            self.lock()
+                .get(&validator)?
+                .range((round, BlockHash::default())..)
+                .next()?
+                .1
+                .clone(),
+        )
+    }
+
+    fn last_known_round(&self, validator: ValidatorIndex) -> Round {
+        match self.lock().get(&validator) {
+            None => Round::ZERO, // todo - remove and require genesis blocks in store
+            Some(m) => m.keys().last().unwrap().0,
+        }
+    }
+
+    fn exists(&self, key: &BlockReference) -> bool {
+        let lock = self.lock();
+        let m = lock.get(&key.author);
+        match m {
+            Some(map) => map.contains_key(&(key.round, key.hash)),
+            None => false,
+        }
+    }
+}
+
+impl<T: BlockStore> BlockStore for Arc<T> {
+    fn put(&self, block: Arc<Block>) {
+        self.deref().put(block)
+    }
+
+    fn get(&self, key: &BlockReference) -> Option<Arc<Block>> {
+        self.deref().get(key)
+    }
+
+    fn get_own(&self, validator: ValidatorIndex, round: Round) -> Option<Arc<Block>> {
+        self.deref().get_own(validator, round)
+    }
+
+    fn last_known_round(&self, validator: ValidatorIndex) -> Round {
+        self.deref().last_known_round(validator)
+    }
+
+    fn exists(&self, key: &BlockReference) -> bool {
+        self.deref().exists(key)
     }
 }
