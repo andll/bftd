@@ -8,6 +8,7 @@ mod core;
 mod crypto;
 mod network;
 mod rpc;
+mod syncer;
 mod threshold_clock;
 
 #[tokio::main]

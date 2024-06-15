@@ -3,7 +3,7 @@ use blake2::{Blake2b, Digest};
 use ed25519_consensus::{SigningKey, VerificationKey};
 use serde::{Deserialize, Serialize};
 
-pub trait Signer {
+pub trait Signer: Send + 'static {
     fn sign_bytes(&self, bytes: &[u8]) -> BlockSignature;
 }
 

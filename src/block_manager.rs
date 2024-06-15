@@ -7,7 +7,7 @@ pub struct BlockManager<S> {
     store: S,
 }
 
-pub trait BlockStore {
+pub trait BlockStore: Send + 'static {
     fn put(&self, block: Arc<Block>);
     fn get(&self, key: &BlockReference) -> Option<Arc<Block>>;
     fn exists(&self, key: &BlockReference) -> bool {

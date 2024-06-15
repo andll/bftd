@@ -1,6 +1,7 @@
 use crate::crypto::{Hasher, SignatureVerifier, Signer};
 use anyhow::ensure;
 use bytes::{BufMut, Bytes, BytesMut};
+use serde::{Deserialize, Serialize};
 
 pub struct Block {
     reference: BlockReference,
@@ -10,16 +11,16 @@ pub struct Block {
     data: Bytes,
 }
 
-#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize)]
 pub struct BlockReference {
     pub round: Round,
     pub author: ValidatorIndex,
     pub hash: BlockHash,
 }
 
-#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize)]
 pub struct ValidatorIndex(pub u64);
-#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize)]
 pub struct Round(pub u64);
 
 const SIGNATURE_LENGTH: usize = 64;
@@ -28,7 +29,7 @@ pub const MAX_PARENTS: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq)]
 pub struct BlockSignature(pub [u8; SIGNATURE_LENGTH]);
-#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize)]
 pub struct BlockHash(pub [u8; BLOCK_HASH_LENGTH]);
 
 impl Block {

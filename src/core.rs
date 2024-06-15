@@ -11,7 +11,7 @@ pub struct Core<S, B> {
     signer: S,
     block_manager: BlockManager<B>,
     proposer_clock: ThresholdClockAggregator,
-    committee: Committee,
+    committee: Arc<Committee>,
     last_proposed_round: Round,
     index: ValidatorIndex,
     parents_accumulator: ParentsAccumulator,
@@ -54,6 +54,10 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
         result.assert_added(block.reference());
         self.last_proposed_round = round;
         Some(block)
+    }
+
+    pub fn committee(&self) -> &Arc<Committee> {
+        &self.committee
     }
 }
 

@@ -24,10 +24,10 @@ pub struct Stake(pub u64);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ValidatorInfo {
-    consensus_key: Ed25519Verifier,
-    network_key: NoisePublicKey,
-    network_address: SocketAddr,
-    stake: Stake,
+    pub consensus_key: Ed25519Verifier,
+    pub network_key: NoisePublicKey,
+    pub network_address: SocketAddr,
+    pub stake: Stake,
 }
 
 impl Committee {
@@ -62,6 +62,13 @@ impl Committee {
             .get(index.0 as usize)
             .expect("Authority not found")
             .stake
+    }
+
+    pub fn enumerate_validators(&self) -> impl Iterator<Item = (ValidatorIndex, &ValidatorInfo)> {
+        self.validators
+            .iter()
+            .enumerate()
+            .map(|(i, vi)| (ValidatorIndex(i as u64), vi))
     }
 }
 
