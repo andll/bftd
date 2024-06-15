@@ -72,7 +72,7 @@ impl<S: Signer, B: BlockStore + Clone> Syncer<S, B> {
                 block = self.blocks_receiver.recv() => {
                     let Some(block) = block else {return;};
                     // todo need more block verification
-                    self.core.add_block(block);
+                    let _new_missing = self.core.add_block(block);
                     // todo handle missing blocks
                     let proposal = self.core.try_make_proposal(&mut ());
                     if let Some(proposal) = proposal {

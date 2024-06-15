@@ -22,13 +22,15 @@ pub trait ProposalMaker {
 }
 
 impl<S: Signer, B: BlockStore> Core<S, B> {
-    pub fn add_block(&mut self, block: Arc<Block>) {
+    /// returns new missing blocks
+    pub fn add_block(&mut self, block: Arc<Block>) -> Vec<BlockReference> {
         let result = self.block_manager.add_block(block);
         for b in result.added.iter() {
             self.proposer_clock
                 .add_block(*b.reference(), &self.committee);
         }
         self.parents_accumulator.add_blocks(result.added);
+        result.new_missing
     }
 
     pub fn try_make_proposal(

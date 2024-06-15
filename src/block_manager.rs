@@ -1,4 +1,5 @@
 use crate::block::{Block, BlockReference, Round, ValidatorIndex};
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -19,6 +20,7 @@ pub trait BlockStore: Send + Sync + 'static {
 
 pub struct AddBlockResult {
     pub added: Vec<Arc<Block>>,
+    pub new_missing: Vec<BlockReference>,
 }
 
 impl<S: BlockStore> BlockManager<S> {
@@ -31,6 +33,7 @@ impl<S: BlockStore> BlockManager<S> {
 
     pub fn add_block(&mut self, block: Arc<Block>) -> AddBlockResult {
         let mut added = Vec::new();
+        let mut new_missing = Vec::new();
         let mut blocks = HashMap::new();
         blocks.insert(*block.reference(), block);
         while let Some(block) = blocks.keys().next().copied() {
@@ -54,12 +57,16 @@ impl<S: BlockStore> BlockManager<S> {
                 self.store.put(block);
             } else {
                 for parent in missing {
-                    let map = self.missing_inverse.entry(parent).or_default();
+                    let entry = self.missing_inverse.entry(parent);
+                    if matches!(entry, Entry::Vacant(_)) {
+                        new_missing.push(parent);
+                    }
+                    let map = entry.or_default();
                     map.insert(*block.reference(), block.clone());
                 }
             }
         }
-        AddBlockResult { added }
+        AddBlockResult { added, new_missing }
     }
 }
 
@@ -81,21 +88,25 @@ mod tests {
         let store = Mutex::new(HashMap::new());
         let mut block_store = BlockManager::new(store);
         let r = block_store.add_block(blk(1, 1, vec![br(0, 0), br(1, 0)]));
-        r.assert_empty();
-        assert_eq!(block_store.store.borrow().len(), 0);
+        r.assert_added_empty();
+        r.assert_new_missing(vec![br(0, 0), br(1, 0)]);
+        assert_eq!(block_store.store.lock().len(), 0);
         let r = block_store.add_block(blk(2, 2, vec![br(0, 0), br(1, 1)]));
-        r.assert_empty();
-        assert_eq!(block_store.store.borrow().len(), 0);
+        r.assert_added_empty();
+        r.assert_new_missing(vec![br(1, 1)]);
+        assert_eq!(block_store.store.lock().len(), 0);
         let r = block_store.add_block(blk(1, 0, vec![]));
         r.assert_added_multi(vec![br(1, 0)]);
-        assert_eq!(block_store.store.borrow().len(), 1);
-        assert!(block_store.store.borrow().contains_key(&br(1, 0)));
+        r.assert_no_new_missing();
+        assert_eq!(block_store.store.lock().len(), 1);
+        assert!(block_store.store.lock().contains_key(&br(1, 0)));
         let r = block_store.add_block(blk(0, 0, vec![]));
         r.assert_added_multi(vec![br(0, 0), br(1, 1), br(2, 2)]);
-        assert_eq!(block_store.store.borrow().len(), 4);
-        assert!(block_store.store.borrow().contains_key(&br(0, 0)));
-        assert!(block_store.store.borrow().contains_key(&br(1, 1)));
-        assert!(block_store.store.borrow().contains_key(&br(2, 2)));
+        r.assert_no_new_missing();
+        assert_eq!(block_store.store.lock().len(), 4);
+        assert!(block_store.store.lock().contains_key(&br(0, 0)));
+        assert!(block_store.store.lock().contains_key(&br(1, 1)));
+        assert!(block_store.store.lock().contains_key(&br(2, 2)));
     }
 
     impl BlockStore for Mutex<HashMap<BlockReference, Arc<Block>>> {
@@ -122,14 +133,27 @@ mod tests {
 
     impl AddBlockResult {
         #[track_caller]
-        pub fn assert_empty(&self) {
+        pub fn assert_added_empty(&self) {
             assert!(self.added.is_empty())
+        }
+
+        #[track_caller]
+        pub fn assert_no_new_missing(&self) {
+            assert!(self.new_missing.is_empty())
         }
 
         #[track_caller]
         pub fn assert_added_multi(&self, v: Vec<BlockReference>) {
             assert_eq!(
                 HashSet::<BlockReference>::from_iter(self.added.iter().map(|b| *b.reference())),
+                HashSet::from_iter(v.into_iter())
+            )
+        }
+
+        #[track_caller]
+        pub fn assert_new_missing(&self, v: Vec<BlockReference>) {
+            assert_eq!(
+                HashSet::<BlockReference>::from_iter(self.new_missing.iter().cloned()),
                 HashSet::from_iter(v.into_iter())
             )
         }
