@@ -59,6 +59,10 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
     pub fn committee(&self) -> &Arc<Committee> {
         &self.committee
     }
+
+    pub fn validator_index(&self) -> ValidatorIndex {
+        self.index
+    }
 }
 
 struct ParentsAccumulator {

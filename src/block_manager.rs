@@ -1,4 +1,4 @@
-use crate::block::{Block, BlockReference};
+use crate::block::{Block, BlockReference, Round, ValidatorIndex};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -7,9 +7,10 @@ pub struct BlockManager<S> {
     store: S,
 }
 
-pub trait BlockStore: Send + 'static {
+pub trait BlockStore: Send + Sync + 'static {
     fn put(&self, block: Arc<Block>);
     fn get(&self, key: &BlockReference) -> Option<Arc<Block>>;
+    fn get_own(&self, validator: ValidatorIndex, round: Round) -> Option<Arc<Block>>;
     fn exists(&self, key: &BlockReference) -> bool {
         self.get(key).is_some()
     }
@@ -71,12 +72,12 @@ impl AddBlockResult {
 mod tests {
     use super::*;
     use crate::block::tests::{blk, br};
-    use std::cell::RefCell;
+    use parking_lot::Mutex;
     use std::collections::HashSet;
 
     #[test]
     pub fn block_store_test() {
-        let store = RefCell::new(HashMap::new());
+        let store = Mutex::new(HashMap::new());
         let mut block_store = BlockManager::new(store);
         let r = block_store.add_block(blk(1, 1, vec![br(0, 0), br(1, 0)]));
         r.assert_empty();
@@ -96,17 +97,21 @@ mod tests {
         assert!(block_store.store.borrow().contains_key(&br(2, 2)));
     }
 
-    impl BlockStore for RefCell<HashMap<BlockReference, Arc<Block>>> {
+    impl BlockStore for Mutex<HashMap<BlockReference, Arc<Block>>> {
         fn put(&self, block: Arc<Block>) {
-            self.borrow_mut().insert(*block.reference(), block);
+            self.lock().insert(*block.reference(), block);
         }
 
         fn get(&self, key: &BlockReference) -> Option<Arc<Block>> {
-            self.borrow().get(key).cloned()
+            self.lock().get(key).cloned()
+        }
+
+        fn get_own(&self, validator: ValidatorIndex, round: Round) -> Option<Arc<Block>> {
+            unimplemented!()
         }
 
         fn exists(&self, key: &BlockReference) -> bool {
-            self.borrow().contains_key(key)
+            self.lock().contains_key(key)
         }
     }
 
