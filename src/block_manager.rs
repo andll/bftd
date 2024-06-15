@@ -11,6 +11,7 @@ pub trait BlockStore: Send + Sync + 'static {
     fn put(&self, block: Arc<Block>);
     fn get(&self, key: &BlockReference) -> Option<Arc<Block>>;
     fn get_own(&self, validator: ValidatorIndex, round: Round) -> Option<Arc<Block>>;
+    fn last_known_round(&self, validator: ValidatorIndex) -> Round;
     fn exists(&self, key: &BlockReference) -> bool {
         self.get(key).is_some()
     }
@@ -107,6 +108,10 @@ mod tests {
         }
 
         fn get_own(&self, validator: ValidatorIndex, round: Round) -> Option<Arc<Block>> {
+            unimplemented!()
+        }
+
+        fn last_known_round(&self, validator: ValidatorIndex) -> Round {
             unimplemented!()
         }
 

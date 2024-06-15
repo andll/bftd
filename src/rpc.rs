@@ -11,7 +11,7 @@ use tokio::task::JoinHandle;
 // todo stream buffer control test
 pub struct NetworkRpc {
     handle: JoinHandle<()>,
-    peer_task_senders: HashMap<NoisePublicKey, mpsc::Sender<PeerRpcRequest>>,
+    peer_task_senders: HashMap<NoisePublicKey, mpsc::Sender<PeerRpcTaskCommand>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -32,7 +32,7 @@ pub enum RpcMessage {
 
 const STREAM_BUFFER_SIZE: u64 = 128 * 1024;
 
-enum PeerRpcRequest {
+pub enum PeerRpcTaskCommand {
     Rpc(NetworkRequest, oneshot::Sender<RpcResult<NetworkResponse>>),
     StreamRpc(NetworkRequest, mpsc::Sender<RpcResult<NetworkResponse>>),
 }
@@ -40,6 +40,9 @@ enum PeerRpcRequest {
 pub trait NetworkRpcRouter: Send {
     fn rpc(&mut self, req: NetworkRequest) -> NetworkResponse;
     fn stream_rpc(&mut self, req: NetworkRequest) -> mpsc::Receiver<NetworkResponse>;
+    fn connected(&mut self) -> Option<PeerRpcTaskCommand> {
+        None
+    }
 }
 
 impl NetworkRpc {
@@ -50,7 +53,7 @@ impl NetworkRpc {
         let (senders, receivers): (Vec<_>, Vec<_>) = peer_routers
             .into_iter()
             .map(|(k, router)| {
-                let (s, r) = mpsc::channel::<PeerRpcRequest>(10);
+                let (s, r) = mpsc::channel::<PeerRpcTaskCommand>(10);
                 let data = PeerTaskData {
                     router,
                     receiver: r,
@@ -80,7 +83,7 @@ impl NetworkRpc {
             return Err(RpcError::PeerNotFound);
         };
         let (s, r) = oneshot::channel();
-        peer.send(PeerRpcRequest::Rpc(request, s)).await?;
+        peer.send(PeerRpcTaskCommand::Rpc(request, s)).await?;
         match r.await {
             Ok(result) => result,
             Err(_) => Err(RpcError::NetworkShutdown),
@@ -96,7 +99,7 @@ impl NetworkRpc {
             return Err(RpcError::PeerNotFound);
         };
         let (s, r) = mpsc::channel(10);
-        peer.send(PeerRpcRequest::StreamRpc(request, s)).await?;
+        peer.send(PeerRpcTaskCommand::StreamRpc(request, s)).await?;
         Ok(r)
     }
 }
@@ -108,7 +111,7 @@ struct RpcTask {
 
 struct PeerTaskData {
     router: Box<dyn NetworkRpcRouter>,
-    receiver: mpsc::Receiver<PeerRpcRequest>,
+    receiver: mpsc::Receiver<PeerRpcTaskCommand>,
 }
 
 impl RpcTask {
@@ -169,6 +172,30 @@ impl PeerTask {
             (u64, mpsc::Sender<RpcResult<NetworkResponse>>),
         > = HashMap::new();
         // todo - wait / clean tasks
+        let initial_command = self.peer_task_data.router.connected();
+        if let Some(command) = initial_command {
+            // todo duplicated code (w/ stream command processing)
+            match command {
+                PeerRpcTaskCommand::Rpc(request, ch) => {
+                    tag += 1;
+                    rpc_requests.insert(tag, ch);
+                    Self::send_message(
+                        &mut self.connection.sender,
+                        &RpcMessage::RpcRequest(tag, request),
+                    )
+                    .await?;
+                }
+                PeerRpcTaskCommand::StreamRpc(request, ch) => {
+                    tag += 1;
+                    inbound_stream_requests.insert(tag, (0, ch));
+                    Self::send_message(
+                        &mut self.connection.sender,
+                        &RpcMessage::RpcStreamRequest(tag, request),
+                    )
+                    .await?;
+                }
+            }
+        }
         let mut outbound_streams = HashMap::new();
         loop {
             select! {
@@ -226,14 +253,15 @@ impl PeerTask {
                     }
                 }
                 command = self.peer_task_data.receiver.recv() => {
-                    let Some(command): Option<PeerRpcRequest> = command else {return Ok(())};
+                    let Some(command): Option<PeerRpcTaskCommand> = command else {return Ok(())};
+                    // todo duplicated code (w/ initial command processing)
                     match command {
-                        PeerRpcRequest::Rpc(request, ch) => {
+                        PeerRpcTaskCommand::Rpc(request, ch) => {
                             tag += 1;
                             rpc_requests.insert(tag, ch);
                             Self::send_message(&mut self.connection.sender, &RpcMessage::RpcRequest(tag, request)).await?;
                         }
-                        PeerRpcRequest::StreamRpc(request, ch) => {
+                        PeerRpcTaskCommand::StreamRpc(request, ch) => {
                             tag += 1;
                             inbound_stream_requests.insert(tag, (0, ch));
                             Self::send_message(&mut self.connection.sender, &RpcMessage::RpcStreamRequest(tag, request)).await?;
@@ -306,20 +334,20 @@ impl StreamRpcResponseTask {
 
 pub type RpcResult<T> = Result<T, RpcError>;
 
-#[derive(Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum RpcError {
-    SerializationError(bincode::Error),
+    #[error("serialization error")]
+    SerializationError(#[from] bincode::Error),
+    #[error("broken pipe")]
     BrokenPipe,
+    #[error("peer not found")]
     PeerNotFound,
+    #[error("network shutdown")]
     NetworkShutdown,
+    #[error("unmatched response")]
     UnmatchedResponse,
+    #[error("unmatched ack")]
     UnmatchedAck,
-}
-
-impl From<bincode::Error> for RpcError {
-    fn from(value: bincode::Error) -> Self {
-        Self::SerializationError(value)
-    }
 }
 
 impl From<mpsc::error::SendError<NetworkMessage>> for RpcError {
@@ -328,8 +356,8 @@ impl From<mpsc::error::SendError<NetworkMessage>> for RpcError {
     }
 }
 
-impl From<mpsc::error::SendError<PeerRpcRequest>> for RpcError {
-    fn from(_value: mpsc::error::SendError<PeerRpcRequest>) -> Self {
+impl From<mpsc::error::SendError<PeerRpcTaskCommand>> for RpcError {
+    fn from(_value: mpsc::error::SendError<PeerRpcTaskCommand>) -> Self {
         Self::BrokenPipe
     }
 }

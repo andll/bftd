@@ -19,6 +19,7 @@ bincode = "1.3.3"
 anyhow = "1.0.71"
 blake2 = "0.10.6"
 ed25519-consensus = "2.1.0"
+thiserror = "1.0.42"
 
 [dev-dependencies]
 rand = "0.8.5"

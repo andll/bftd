@@ -91,6 +91,13 @@ impl ParentsAccumulator {
     }
 }
 
+// todo delete
+impl ProposalMaker for () {
+    fn make_proposal(&mut self) -> Bytes {
+        Bytes::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

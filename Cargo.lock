@@ -804,6 +804,7 @@ dependencies = [
  "serde",
  "sled",
  "snow",
+ "thiserror",
  "tokio",
 ]
 

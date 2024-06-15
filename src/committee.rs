@@ -47,8 +47,18 @@ impl Committee {
         }
     }
 
-    pub fn verify_block(&self, data: Bytes) -> anyhow::Result<Block> {
+    pub fn verify_block(
+        &self,
+        data: Bytes,
+        expected_author: Option<ValidatorIndex>,
+    ) -> anyhow::Result<Block> {
         let author = Block::author_from_bytes(&data)?;
+        if let Some(expected_author) = expected_author {
+            ensure!(
+                expected_author == author,
+                "Received block authored by {author} validator, expected {expected_author}"
+            );
+        }
         ensure!(author.0 < MAX_COMMITTEE, "Validator not found");
         let Some(author) = self.validators.get(author.0 as usize) else {
             bail!("Validator not found")

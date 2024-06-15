@@ -2,6 +2,7 @@ use crate::crypto::{Hasher, SignatureVerifier, Signer};
 use anyhow::ensure;
 use bytes::{BufMut, Bytes, BytesMut};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 pub struct Block {
     reference: BlockReference,
@@ -243,6 +244,13 @@ impl Round {
 
     pub fn next(&self) -> Self {
         Self(self.0 + 1)
+    }
+}
+
+impl fmt::Display for ValidatorIndex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // todo better impl
+        write!(f, "{}", self.0)
     }
 }
 
