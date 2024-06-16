@@ -4,7 +4,7 @@ use crate::committee::Committee;
 use crate::crypto::{Blake2Hasher, Signer};
 use crate::threshold_clock::ThresholdClockAggregator;
 use bytes::Bytes;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
 pub struct Core<S, B> {
@@ -69,7 +69,7 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
             return None;
         }
         let payload = proposal_maker.make_proposal();
-        let parents = self.parents_accumulator.take_parents();
+        let parents = self.parents_accumulator.take_parents(round);
         let block = Block::new(
             round,
             self.index,
@@ -104,7 +104,7 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
 }
 
 struct ParentsAccumulator {
-    parents: HashSet<BlockReference>,
+    parents: BTreeMap<BlockReference, Arc<Block>>,
 }
 
 impl ParentsAccumulator {
@@ -115,17 +115,26 @@ impl ParentsAccumulator {
     }
 
     pub fn add_blocks(&mut self, blocks: &[Arc<Block>]) {
-        let mut remove_parents = HashSet::<BlockReference>::new();
         for block in blocks {
-            self.parents.insert(*block.reference());
-            // todo - keep own previous proposal block?
-            remove_parents.extend(block.parents());
+            self.parents.insert(*block.reference(), block.clone());
         }
-        self.parents.retain(|r| !remove_parents.contains(r));
     }
 
-    pub fn take_parents(&mut self) -> Vec<BlockReference> {
-        self.parents.drain().collect()
+    pub fn take_parents(&mut self, before_round_excluded: Round) -> Vec<BlockReference> {
+        let mut remove_parents = HashSet::<BlockReference>::new();
+        let mut parents = HashSet::<BlockReference>::new();
+        let all_parents = self
+            .parents
+            .range(..BlockReference::first_block_reference_for_round(before_round_excluded));
+        let all_parents: Vec<_> = all_parents.map(|(r, _)| *r).collect();
+        for parent in all_parents {
+            let parent = self.parents.remove(&parent).unwrap();
+            remove_parents.extend(parent.parents());
+            // todo - keep own previous proposal block?
+            parents.insert(*parent.reference());
+        }
+        parents.retain(|k| !remove_parents.contains(k));
+        parents.into_iter().collect()
     }
 }
 
@@ -144,8 +153,13 @@ mod tests {
     #[test]
     pub fn parents_accumulator_test() {
         let mut pa = ParentsAccumulator::new();
-        pa.add_blocks(vec![blk(1, 1, vec![br(1, 0)]), blk(1, 2, vec![br(1, 1)])]);
-        assert_eq!(pa.take_parents(), vec![br(1, 2)]);
+        pa.add_blocks(&[blk(1, 1, vec![br(1, 0)]), blk(1, 2, vec![br(1, 1)])]);
+        assert_eq!(pa.take_parents(Round(3)), vec![br(1, 2)]);
+        assert!(pa.parents.is_empty());
+        pa.add_blocks(&[blk(1, 1, vec![br(1, 0)]), blk(1, 2, vec![br(1, 1)])]);
+        assert_eq!(pa.take_parents(Round(2)), vec![br(1, 1)]);
+        assert_eq!(pa.parents.len(), 1);
+        assert_eq!(pa.take_parents(Round(3)), vec![br(1, 2)]);
         assert!(pa.parents.is_empty());
     }
 }

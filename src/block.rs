@@ -299,6 +299,14 @@ impl BlockReference {
     pub fn round(&self) -> Round {
         self.round
     }
+
+    pub fn first_block_reference_for_round(round: Round) -> Self {
+        Self {
+            round,
+            author: ValidatorIndex(0),
+            hash: BlockHash::MIN,
+        }
+    }
 }
 
 impl Round {
@@ -396,7 +404,7 @@ pub mod tests {
 
     #[test]
     pub fn test_block_ser() {
-        let round = Round(2);
+        let round = Round(17);
         let author = ValidatorIndex(3);
         let payload = [1, 2, 3];
         let signature = [1u8; SIGNATURE_LENGTH];
