@@ -77,7 +77,7 @@ impl<S: Signer, B: BlockStore + Clone> Syncer<S, B> {
             select! {
                 block = self.blocks_receiver.recv() => {
                     let Some(block) = block else {return;};
-                    log::debug!("[{}] Received block from {} at round {}", self.core.validator_index(), block.author(), block.round().0);
+                    log::debug!("[{}] Received block {}", self.core.validator_index(), block.reference());
                     // todo need more block verification
                     let _new_missing = self.core.add_block(block);
                     // todo handle missing blocks
@@ -91,9 +91,9 @@ impl<S: Signer, B: BlockStore + Clone> Syncer<S, B> {
         let proposal = self.core.try_make_proposal(&mut ());
         if let Some(proposal) = proposal {
             log::debug!(
-                "[{}] Generated proposal at round {}",
+                "[{}] Generated proposal {}",
                 self.core.validator_index(),
-                proposal.round().0
+                proposal
             );
             self.last_proposed_round_sender
                 .send(proposal.reference().round)

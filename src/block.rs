@@ -307,22 +307,46 @@ impl AuthorRound {
 
 impl fmt::Display for ValidatorIndex {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // todo better impl
-        write!(f, "{}", self.0)
+        if self.0 > 26 {
+            write!(f, "V{}", self.0)
+        } else {
+            let l = ('A' as u8 + self.0 as u8) as char;
+            write!(f, "{l}")
+        }
     }
 }
 
 impl fmt::Display for Round {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // todo better impl
-        write!(f, "{}", self.0)
+        write!(f, "{:0>4}", self.0)
+    }
+}
+
+impl fmt::Display for AuthorRound {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", format_author_round(self.author, self.round))
+    }
+}
+
+impl fmt::Display for BlockHash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", hex::encode(&self.0[..4]))
     }
 }
 
 impl fmt::Display for BlockReference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // todo better impl
-        write!(f, "{}@{}", self.author, self.round.0)
+        write!(f, "{}@{}", self.author_round(), self.hash)
+    }
+}
+
+impl fmt::Display for Block {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}[", self.reference())?;
+        for parent in &self.parents {
+            write!(f, "{},", parent)?;
+        }
+        write!(f, "]")
     }
 }
 
@@ -347,14 +371,7 @@ impl Add<u64> for Round {
 }
 
 pub fn format_author_round(index: ValidatorIndex, round: Round) -> String {
-    format!("{}@{}", index, round.0)
-}
-
-impl fmt::Display for AuthorRound {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // todo better impl
-        write!(f, "{}", format_author_round(self.author, self.round))
-    }
+    format!("{}{}", index, round)
 }
 
 #[cfg(test)]
