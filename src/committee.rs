@@ -86,6 +86,12 @@ impl Committee {
             .enumerate()
             .map(|(i, vi)| (ValidatorIndex(i as u64), vi))
     }
+
+    pub fn genesis_blocks(&self) -> Vec<Block> {
+        self.enumerate_validators()
+            .map(|(i, _)| Block::genesis(i))
+            .collect()
+    }
 }
 
 impl Stake {

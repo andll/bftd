@@ -46,11 +46,7 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
     /// returns new missing blocks
     pub fn add_block(&mut self, block: Arc<Block>) -> Vec<BlockReference> {
         let result = self.block_manager.add_block(block);
-        for b in result.added.iter() {
-            self.proposer_clock
-                .add_block(*b.reference(), &self.committee);
-        }
-        self.parents_accumulator.add_blocks(result.added);
+        self.blocks_inserted(&result.added);
         result.new_missing
     }
 
@@ -75,8 +71,17 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
         let block = Arc::new(block);
         let result = self.block_manager.add_block(block.clone());
         result.assert_added(block.reference());
+        self.blocks_inserted(&result.added);
         self.last_proposed_round = round;
         Some(block)
+    }
+
+    fn blocks_inserted(&mut self, blocks: &[Arc<Block>]) {
+        for b in blocks {
+            self.proposer_clock
+                .add_block(*b.reference(), &self.committee);
+        }
+        self.parents_accumulator.add_blocks(blocks);
     }
 
     pub fn committee(&self) -> &Arc<Committee> {
@@ -99,7 +104,7 @@ impl ParentsAccumulator {
         }
     }
 
-    pub fn add_blocks(&mut self, blocks: Vec<Arc<Block>>) {
+    pub fn add_blocks(&mut self, blocks: &[Arc<Block>]) {
         let mut remove_parents = HashSet::<BlockReference>::new();
         for block in blocks {
             self.parents.insert(*block.reference());

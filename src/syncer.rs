@@ -67,19 +67,40 @@ impl<S: Signer, B: BlockStore + Clone> Syncer<S, B> {
     }
 
     pub async fn run(mut self) {
+        for block in self.core.committee().genesis_blocks() {
+            let block = Arc::new(block);
+            self.core.add_block(block);
+        }
+        let proposed = self.make_proposal();
+        assert!(proposed, "must generate proposal after genesis");
         loop {
             select! {
                 block = self.blocks_receiver.recv() => {
                     let Some(block) = block else {return;};
+                    log::debug!("[{}] Received block from {} at round {}", self.core.validator_index(), block.author(), block.round().0);
                     // todo need more block verification
                     let _new_missing = self.core.add_block(block);
                     // todo handle missing blocks
-                    let proposal = self.core.try_make_proposal(&mut ());
-                    if let Some(proposal) = proposal {
-                        self.last_proposed_round_sender.send(proposal.reference().round).ok();
-                    }
+                    self.make_proposal();
                 }
             }
+        }
+    }
+
+    fn make_proposal(&mut self) -> bool {
+        let proposal = self.core.try_make_proposal(&mut ());
+        if let Some(proposal) = proposal {
+            log::debug!(
+                "[{}] Generated proposal at round {}",
+                self.core.validator_index(),
+                proposal.round().0
+            );
+            self.last_proposed_round_sender
+                .send(proposal.reference().round)
+                .ok();
+            true
+        } else {
+            false
         }
     }
 }
@@ -127,19 +148,17 @@ impl<B: BlockStore> PeerRouter<B> {
         // todo - check initial condition is ok
         while let Ok(()) = round_receiver.changed().await {
             let round = *round_receiver.borrow();
-            loop {
-                if round > last_sent {
-                    // todo batch read range w/ chunks
-                    last_sent = last_sent.next();
-                    let own_block = inner
-                        .block_store
-                        .get_own(inner.validator_index, last_sent)
-                        .expect("Missing own block which was signaled as ready");
-                    let response = StreamRpcResponse::Block(own_block.data().clone());
-                    let response = bincode::serialize(&response).expect("Serialization failed");
-                    if sender.send(NetworkResponse(response.into())).await.is_err() {
-                        return;
-                    }
+            while round > last_sent {
+                // todo batch read range w/ chunks
+                last_sent = last_sent.next();
+                let own_block = inner
+                    .block_store
+                    .get_own(inner.validator_index, last_sent)
+                    .expect("Missing own block which was signaled as ready");
+                let response = StreamRpcResponse::Block(own_block.data().clone());
+                let response = bincode::serialize(&response).expect("Serialization failed");
+                if sender.send(NetworkResponse(response.into())).await.is_err() {
+                    return;
                 }
             }
         }

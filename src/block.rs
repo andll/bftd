@@ -1,4 +1,4 @@
-use crate::crypto::{Hasher, SignatureVerifier, Signer};
+use crate::crypto::{Blake2Hasher, Hasher, SignatureVerifier, Signer};
 use anyhow::ensure;
 use bytes::{BufMut, Bytes, BytesMut};
 use serde::{Deserialize, Serialize};
@@ -210,6 +210,25 @@ impl Block {
             data,
         })
     }
+
+    pub fn genesis(author: ValidatorIndex) -> Self {
+        Self::new(
+            Round::ZERO,
+            author,
+            &[],
+            vec![],
+            &EmptySignature,
+            &Blake2Hasher,
+        )
+    }
+}
+
+struct EmptySignature;
+
+impl Signer for EmptySignature {
+    fn sign_bytes(&self, _bytes: &[u8]) -> BlockSignature {
+        BlockSignature::NONE
+    }
 }
 
 impl BlockReference {
@@ -266,6 +285,10 @@ impl fmt::Display for ValidatorIndex {
         // todo better impl
         write!(f, "{}", self.0)
     }
+}
+
+impl BlockSignature {
+    const NONE: Self = Self([0; SIGNATURE_LENGTH]);
 }
 
 #[cfg(test)]
