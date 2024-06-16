@@ -29,7 +29,8 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
         index: ValidatorIndex,
     ) -> Self {
         let block_manager = BlockManager::new(block_store);
-        let last_proposed_round = Round::ZERO; // todo load
+        // todo recover items below
+        let last_proposed_round = Round::ZERO;
         let proposer_clock = ThresholdClockAggregator::new(last_proposed_round);
         let parents_accumulator = ParentsAccumulator::new();
         Self {

@@ -7,7 +7,9 @@ use crate::network::{ConnectionPool, NoisePublicKey, PeerInfo};
 use crate::syncer::Syncer;
 use rand::rngs::ThreadRng;
 use std::sync::Arc;
+use std::thread;
 use std::time::Duration;
+use tokio::runtime::Runtime;
 
 mod block;
 mod block_manager;
@@ -19,8 +21,7 @@ mod rpc;
 mod syncer;
 mod threshold_clock;
 
-#[tokio::main]
-async fn main() {
+fn main() {
     env_logger::init();
     let builder = snow::Builder::new("Noise_NN_25519_ChaChaPoly_BLAKE2s".parse().unwrap());
     let num_validators = 3usize;
@@ -50,6 +51,8 @@ async fn main() {
         peers.push(peer_info);
     }
     let committee = Arc::new(Committee::new(validators));
+    let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
+    let mut syncers = Vec::with_capacity(num_validators);
     for (i, (noise_private_key, protocol_private_key)) in noise_private_keys
         .into_iter()
         .zip(protocol_private_keys.into_iter())
@@ -57,8 +60,7 @@ async fn main() {
     {
         let validator_index = ValidatorIndex(i as u64);
         let address = committee.validator(validator_index).network_address;
-        let pool = ConnectionPool::start(address, noise_private_key.into(), peers.clone(), i)
-            .await
+        let pool = runtime.block_on(ConnectionPool::start(address, noise_private_key.into(), peers.clone(), i))
             .unwrap();
         let block_store = Arc::new(MemoryBlockStore::default());
         let core = Core::new(
@@ -67,8 +69,12 @@ async fn main() {
             committee.clone(),
             validator_index,
         );
-        let _syncer = Syncer::start(core, block_store, pool);
+        {
+            let _enter = runtime.enter();
+            let syncer = Syncer::start(core, block_store, pool);
+            syncers.push(syncer);
+        }
     }
-    tokio::time::sleep(Duration::from_secs(3)).await;
+    thread::sleep(Duration::from_secs(3));
     println!("OK");
 }
