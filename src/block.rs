@@ -3,6 +3,7 @@ use anyhow::ensure;
 use bytes::{BufMut, Bytes, BytesMut};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::ops::Add;
 
 pub struct Block {
     reference: BlockReference,
@@ -23,6 +24,12 @@ pub struct BlockReference {
 pub struct ValidatorIndex(pub u64);
 #[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize)]
 pub struct Round(pub u64);
+
+#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize)]
+pub struct AuthorRound {
+    pub author: ValidatorIndex,
+    pub round: Round,
+}
 
 const SIGNATURE_LENGTH: usize = 64;
 const BLOCK_HASH_LENGTH: usize = 32;
@@ -73,6 +80,10 @@ impl Block {
 
     pub fn block_hash(&self) -> &BlockHash {
         &self.reference.hash
+    }
+
+    pub fn author_round(&self) -> AuthorRound {
+        self.reference.author_round()
     }
 
     pub fn author_from_bytes(data: &[u8]) -> anyhow::Result<ValidatorIndex> {
@@ -265,6 +276,14 @@ impl BlockReference {
         buf.put_u64_le(self.author.0);
         buf.put_slice(&self.hash.0);
     }
+
+    pub fn author_round(&self) -> AuthorRound {
+        AuthorRound::new(self.author, self.round)
+    }
+
+    pub fn round(&self) -> Round {
+        self.round
+    }
 }
 
 impl Round {
@@ -280,6 +299,12 @@ impl Round {
     }
 }
 
+impl AuthorRound {
+    pub fn new(author: ValidatorIndex, round: Round) -> Self {
+        Self { author, round }
+    }
+}
+
 impl fmt::Display for ValidatorIndex {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // todo better impl
@@ -287,8 +312,49 @@ impl fmt::Display for ValidatorIndex {
     }
 }
 
+impl fmt::Display for Round {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // todo better impl
+        write!(f, "{}", self.0)
+    }
+}
+
+impl fmt::Display for BlockReference {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // todo better impl
+        write!(f, "{}@{}", self.author, self.round.0)
+    }
+}
+
 impl BlockSignature {
     const NONE: Self = Self([0; SIGNATURE_LENGTH]);
+}
+
+impl Add for Round {
+    type Output = Round;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl Add<u64> for Round {
+    type Output = Round;
+
+    fn add(self, rhs: u64) -> Self::Output {
+        Self(self.0 + rhs)
+    }
+}
+
+pub fn format_author_round(index: ValidatorIndex, round: Round) -> String {
+    format!("{}@{}", index, round.0)
+}
+
+impl fmt::Display for AuthorRound {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // todo better impl
+        write!(f, "{}", format_author_round(self.author, self.round))
+    }
 }
 
 #[cfg(test)]

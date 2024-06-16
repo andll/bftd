@@ -15,6 +15,11 @@ pub trait BlockStore: Send + Sync + 'static {
     fn get_own(&self, validator: ValidatorIndex, round: Round) -> Option<Arc<Block>>;
     fn last_known_round(&self, validator: ValidatorIndex) -> Round;
     fn exists(&self, key: &BlockReference) -> bool;
+
+    fn get_blocks_by_round(&self, round: Round) -> Vec<Arc<Block>>;
+    fn get_blocks_at_author_round(&self, author: ValidatorIndex, round: Round) -> Vec<Arc<Block>>;
+
+    fn linked_to_round(&self, block: &Arc<Block>, round: Round) -> Vec<Arc<Block>>;
 }
 
 pub struct AddBlockResult {
@@ -128,6 +133,22 @@ mod tests {
         fn exists(&self, key: &BlockReference) -> bool {
             self.lock().contains_key(key)
         }
+
+        fn get_blocks_by_round(&self, _round: Round) -> Vec<Arc<Block>> {
+            unimplemented!()
+        }
+
+        fn get_blocks_at_author_round(
+            &self,
+            _author: ValidatorIndex,
+            _round: Round,
+        ) -> Vec<Arc<Block>> {
+            unimplemented!()
+        }
+
+        fn linked_to_round(&self, _block: &Arc<Block>, _round: Round) -> Vec<Arc<Block>> {
+            unimplemented!()
+        }
     }
 
     impl AddBlockResult {
@@ -203,6 +224,22 @@ impl BlockStore for MemoryBlockStore {
             None => false,
         }
     }
+
+    fn get_blocks_by_round(&self, _round: Round) -> Vec<Arc<Block>> {
+        unimplemented!()
+    }
+
+    fn get_blocks_at_author_round(
+        &self,
+        _author: ValidatorIndex,
+        _round: Round,
+    ) -> Vec<Arc<Block>> {
+        unimplemented!()
+    }
+
+    fn linked_to_round(&self, _block: &Arc<Block>, _round: Round) -> Vec<Arc<Block>> {
+        unimplemented!()
+    }
 }
 
 impl<T: BlockStore> BlockStore for Arc<T> {
@@ -224,5 +261,17 @@ impl<T: BlockStore> BlockStore for Arc<T> {
 
     fn exists(&self, key: &BlockReference) -> bool {
         self.deref().exists(key)
+    }
+
+    fn get_blocks_by_round(&self, round: Round) -> Vec<Arc<Block>> {
+        self.deref().get_blocks_by_round(round)
+    }
+
+    fn get_blocks_at_author_round(&self, author: ValidatorIndex, round: Round) -> Vec<Arc<Block>> {
+        self.deref().get_blocks_at_author_round(author, round)
+    }
+
+    fn linked_to_round(&self, block: &Arc<Block>, round: Round) -> Vec<Arc<Block>> {
+        self.deref().linked_to_round(block, round)
     }
 }

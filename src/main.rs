@@ -9,11 +9,11 @@ use rand::rngs::ThreadRng;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use tokio::runtime::Runtime;
 
 mod block;
 mod block_manager;
 mod committee;
+mod consensus;
 mod core;
 mod crypto;
 mod network;
@@ -51,7 +51,10 @@ fn main() {
         peers.push(peer_info);
     }
     let committee = Arc::new(Committee::new(validators));
-    let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
     let mut syncers = Vec::with_capacity(num_validators);
     for (i, (noise_private_key, protocol_private_key)) in noise_private_keys
         .into_iter()
@@ -60,7 +63,13 @@ fn main() {
     {
         let validator_index = ValidatorIndex(i as u64);
         let address = committee.validator(validator_index).network_address;
-        let pool = runtime.block_on(ConnectionPool::start(address, noise_private_key.into(), peers.clone(), i))
+        let pool = runtime
+            .block_on(ConnectionPool::start(
+                address,
+                noise_private_key.into(),
+                peers.clone(),
+                i,
+            ))
             .unwrap();
         let block_store = Arc::new(MemoryBlockStore::default());
         let core = Core::new(

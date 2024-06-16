@@ -1,9 +1,11 @@
-use crate::block::{Block, ValidatorIndex};
+use crate::block::{Block, Round, ValidatorIndex};
 use crate::crypto::{Blake2Hasher, Ed25519Verifier};
 use crate::NoisePublicKey;
 use anyhow::{bail, ensure};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
+use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::net::SocketAddr;
 #[cfg(test)]
 use std::net::{IpAddr, Ipv4Addr};
@@ -19,7 +21,7 @@ pub struct Committee {
 
 const MAX_COMMITTEE: u64 = 1024 * 1024;
 
-#[derive(Clone, Debug, Serialize, Deserialize, Copy)]
+#[derive(Clone, Debug, Serialize, Deserialize, Copy, PartialOrd, PartialEq)]
 pub struct Stake(pub u64);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -92,6 +94,15 @@ impl Committee {
             .map(|(i, _)| Block::genesis(i))
             .collect()
     }
+
+    pub fn elect_leader(&self, round: Round, offset: u64) -> ValidatorIndex {
+        let mut h = seahash::SeaHasher::new();
+        round.hash(&mut h);
+        offset.hash(&mut h);
+        let h = h.finish();
+        let index = h % (self.validators.len() as u64);
+        ValidatorIndex(index)
+    }
 }
 
 impl Stake {
@@ -117,5 +128,11 @@ impl Committee {
                 })
                 .collect(),
         )
+    }
+}
+
+impl fmt::Display for Stake {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
