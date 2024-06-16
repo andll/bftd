@@ -9,11 +9,17 @@ use crate::rpc::{
 };
 use crate::ConnectionPool;
 use bytes::Bytes;
+use futures::FutureExt;
 use serde::{Deserialize, Serialize};
+use std::future::Future;
+use std::ops::Add;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+use tokio::time::Instant;
 
 pub struct Syncer<S, B> {
     core: Core<S, B>,
@@ -83,10 +89,16 @@ impl<S: Signer, B: BlockStore + Clone> Syncer<S, B> {
         let proposed = self.make_proposal();
         assert!(proposed, "must generate proposal after genesis");
         let (mut committed, mut skipped) = (0usize, 0usize);
-        // let mut proposal_deadline: Option<Instant> = None;
+        let mut proposal_deadline: Pin<Box<dyn Future<Output = ()> + Send>> =
+            futures::future::pending().boxed();
+        let mut proposal_deadline_set = false;
         loop {
             select! {
                 block = self.blocks_receiver.recv() => {
+                    // use rand::Rng;
+                    // use rand::rngs::ThreadRng;
+                    // let d = ThreadRng::default().gen_range(0..1000);
+                    // tokio::time::sleep(std::time::Duration::from_micros(d)).await;
                     let Some(block) = block else {return;};
                     log::debug!("[{}] Received block {}", self.core.validator_index(), block.reference());
                     // todo need more block verification
@@ -95,18 +107,25 @@ impl<S: Signer, B: BlockStore + Clone> Syncer<S, B> {
                     if let Some(next_proposal_round) = self.core.next_proposal_round() {
                         let check_round = next_proposal_round.previous();
                         let mut ready = true;
-                        // let leaders = self.committer.get_leaders(check_round);
-                        // for leader in leaders {
-                        //     // todo - exists method instead of get
-                        //     if self.block_store.get_blocks_at_author_round(leader, check_round).is_empty() {
-                        //         ready = false;
-                        //         break;
-                        //     }
-                        // }
+                        let leaders = self.committer.get_leaders(check_round);
+                        for leader in leaders {
+                            // todo - exists method instead of get
+                            if self.block_store.get_blocks_at_author_round(leader, check_round).is_empty() {
+                                log::debug!("[{}] Not ready to make proposal, missing {}{}", self.core.validator_index(), leader, check_round);
+                                // todo check network connection to the leader
+                                ready = false;
+                                break;
+                            }
+                        }
                         if ready {
                             self.make_proposal();
+                            proposal_deadline = futures::future::pending().boxed();
+                            proposal_deadline_set = false;
                         } else {
-
+                            if !proposal_deadline_set {
+                                proposal_deadline = tokio::time::sleep_until(Instant::now().add(Duration::from_secs(1))).boxed();
+                                proposal_deadline_set = true;
+                            }
                         }
                     }
                     let leader_status = self.committer.try_commit(self.last_decided, *self.last_proposed_round_sender.borrow());
@@ -120,9 +139,14 @@ impl<S: Signer, B: BlockStore + Clone> Syncer<S, B> {
                             skipped += 1;
                         }
                     }
-                    if committed % 100 == 0 && committed > 0 {
+                    if (committed % 10 == 0 && committed > 0) || (skipped % 10 == 0 && skipped > 0) {
                         println!("[{}] stat: committed {}, skipped {}", self.core.validator_index(), committed, skipped);
                     }
+                }
+                _ = &mut proposal_deadline => {
+                    self.make_proposal();
+                    proposal_deadline = futures::future::pending().boxed();
+                    proposal_deadline_set = false;
                 }
             }
         }
@@ -192,10 +216,10 @@ impl<B: BlockStore> PeerRouter<B> {
             while round > last_sent {
                 // todo batch read range w/ chunks
                 last_sent = last_sent.next();
-                let own_block = inner
-                    .block_store
-                    .get_own(inner.validator_index, last_sent)
-                    .expect("Missing own block which was signaled as ready");
+                let Some(own_block) = inner.block_store.get_own(inner.validator_index, last_sent)
+                else {
+                    continue; // todo - more efficient, iterating through each round right now
+                };
                 let response = StreamRpcResponse::Block(own_block.data().clone());
                 let response = bincode::serialize(&response).expect("Serialization failed");
                 if sender.send(NetworkResponse(response.into())).await.is_err() {

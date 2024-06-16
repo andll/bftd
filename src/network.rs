@@ -163,12 +163,12 @@ impl PeerTask {
             let initial_delay = if self.active {
                 Duration::ZERO
             } else {
-                Duration::from_secs(5)
+                Duration::from_secs(1)
             };
             let establish_connection_task = tokio::spawn(Self::establish_connection(
                 self.peer.clone(),
                 initial_delay,
-                Duration::from_secs(5),
+                Duration::from_secs(1),
                 self.pk.clone(),
             ));
             let was_incoming;

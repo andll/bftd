@@ -24,7 +24,7 @@ mod threshold_clock;
 fn main() {
     env_logger::init();
     let builder = snow::Builder::new("Noise_NN_25519_ChaChaPoly_BLAKE2s".parse().unwrap());
-    let num_validators = 3usize;
+    let num_validators = 10usize;
     let mut peers = Vec::with_capacity(num_validators);
     let mut noise_private_keys = Vec::with_capacity(num_validators);
     let mut protocol_private_keys = Vec::with_capacity(num_validators);
@@ -84,6 +84,6 @@ fn main() {
             syncers.push(syncer);
         }
     }
-    thread::sleep(Duration::from_secs(3));
+    thread::sleep(Duration::from_secs(10));
     println!("OK");
 }
