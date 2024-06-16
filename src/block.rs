@@ -20,12 +20,18 @@ pub struct BlockReference {
     pub hash: BlockHash,
 }
 
-#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize)]
+#[derive(
+    Default, Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize,
+)]
 pub struct ValidatorIndex(pub u64);
-#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize)]
+#[derive(
+    Default, Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize,
+)]
 pub struct Round(pub u64);
 
-#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize)]
+#[derive(
+    Default, Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize,
+)]
 pub struct AuthorRound {
     pub author: ValidatorIndex,
     pub round: Round,
@@ -37,9 +43,7 @@ pub const MAX_PARENTS: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq)]
 pub struct BlockSignature(pub [u8; SIGNATURE_LENGTH]);
-#[derive(
-    Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize, Default,
-)]
+#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize)]
 pub struct BlockHash(pub [u8; BLOCK_HASH_LENGTH]);
 
 impl Block {
@@ -112,6 +116,12 @@ impl Block {
         data.put_u64_le(author.0);
         data.put_u32_le(parents.len() as u32);
         for parent in &parents {
+            assert!(
+                parent.round < round,
+                "Including parent {}, our round {}",
+                parent,
+                round
+            );
             parent.write(&mut data);
         }
         data.put_slice(payload);
@@ -232,6 +242,11 @@ impl Block {
             &Blake2Hasher,
         )
     }
+}
+
+impl BlockHash {
+    pub const MIN: Self = Self([0x0; BLOCK_HASH_LENGTH]);
+    pub const MAX: Self = Self([0xff; BLOCK_HASH_LENGTH]);
 }
 
 struct EmptySignature;

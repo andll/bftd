@@ -1,6 +1,7 @@
-use crate::block::{Block, BlockReference, Round, ValidatorIndex};
+use crate::block::{AuthorRound, Block, BlockReference, Round, ValidatorIndex};
 use crate::block_manager::BlockStore;
 use crate::committee::Committee;
+use crate::consensus::{LeaderStatus, UniversalCommitter, UniversalCommitterBuilder};
 use crate::core::Core;
 use crate::crypto::Signer;
 use crate::rpc::{
@@ -16,10 +17,12 @@ use tokio::task::JoinHandle;
 
 pub struct Syncer<S, B> {
     core: Core<S, B>,
+    committer: UniversalCommitter<B>,
     block_store: B,
     rpc: NetworkRpc,
     last_proposed_round_sender: tokio::sync::watch::Sender<Round>,
     blocks_receiver: mpsc::Receiver<Arc<Block>>,
+    last_decided: AuthorRound,
 }
 
 struct SyncerInner<B> {
@@ -33,6 +36,10 @@ struct SyncerInner<B> {
 impl<S: Signer, B: BlockStore + Clone> Syncer<S, B> {
     pub fn start(core: Core<S, B>, block_store: B, pool: ConnectionPool) -> JoinHandle<()> {
         let committee = core.committee().clone();
+        let committer = UniversalCommitterBuilder::new(committee.clone(), block_store.clone())
+            .with_pipeline(true)
+            .with_number_of_leaders(1)
+            .build();
         let validator_index = core.validator_index();
         let (last_proposed_round_sender, last_proposed_round_receiver) =
             tokio::sync::watch::channel(Round::ZERO);
@@ -58,10 +65,12 @@ impl<S: Signer, B: BlockStore + Clone> Syncer<S, B> {
         let rpc = NetworkRpc::start(pool, peer_routers);
         let syncer = Self {
             core,
+            committer,
             block_store,
             rpc,
             last_proposed_round_sender,
             blocks_receiver,
+            last_decided: AuthorRound::default(), // todo load
         };
         tokio::spawn(syncer.run())
     }
@@ -73,6 +82,8 @@ impl<S: Signer, B: BlockStore + Clone> Syncer<S, B> {
         }
         let proposed = self.make_proposal();
         assert!(proposed, "must generate proposal after genesis");
+        let (mut committed, mut skipped) = (0usize, 0usize);
+        // let mut proposal_deadline: Option<Instant> = None;
         loop {
             select! {
                 block = self.blocks_receiver.recv() => {
@@ -81,7 +92,37 @@ impl<S: Signer, B: BlockStore + Clone> Syncer<S, B> {
                     // todo need more block verification
                     let _new_missing = self.core.add_block(block);
                     // todo handle missing blocks
-                    self.make_proposal();
+                    if let Some(next_proposal_round) = self.core.next_proposal_round() {
+                        let check_round = next_proposal_round.previous();
+                        let mut ready = true;
+                        // let leaders = self.committer.get_leaders(check_round);
+                        // for leader in leaders {
+                        //     // todo - exists method instead of get
+                        //     if self.block_store.get_blocks_at_author_round(leader, check_round).is_empty() {
+                        //         ready = false;
+                        //         break;
+                        //     }
+                        // }
+                        if ready {
+                            self.make_proposal();
+                        } else {
+
+                        }
+                    }
+                    let leader_status = self.committer.try_commit(self.last_decided, *self.last_proposed_round_sender.borrow());
+                    for c in leader_status {
+                        self.last_decided = c.as_decided_author_round();
+                        if let LeaderStatus::Commit(c) = c {
+                            log::debug!("[{}] Committed {}", self.core.validator_index(), c.reference());
+                            committed += 1;
+                        } else if let LeaderStatus::Skip(author_round) = c {
+                            log::debug!("[{}] Skipping commit at {}", self.core.validator_index(), author_round);
+                            skipped += 1;
+                        }
+                    }
+                    if committed % 100 == 0 && committed > 0 {
+                        println!("[{}] stat: committed {}, skipped {}", self.core.validator_index(), committed, skipped);
+                    }
                 }
             }
         }

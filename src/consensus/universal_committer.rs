@@ -64,8 +64,6 @@ impl<B: BlockStore> UniversalCommitter<B> {
             }
         }
 
-        // todo change return type
-
         // The decided sequence is the longest prefix of decided leaders.
         leaders
             .into_iter()

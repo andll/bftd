@@ -15,6 +15,8 @@ pub const DEFAULT_WAVE_LENGTH: u64 = MINIMUM_WAVE_LENGTH;
 /// We need at least one leader round, one voting round, and one decision round.
 pub const MINIMUM_WAVE_LENGTH: u64 = 3;
 
+pub use universal_committer::{UniversalCommitter, UniversalCommitterBuilder};
+
 /// The status of every leader output by the committers. While the core only cares about committed
 /// leaders, providing a richer status allows for easier debugging, testing, and composition with
 /// advanced commit strategies.
@@ -57,10 +59,10 @@ impl LeaderStatus {
         }
     }
 
-    pub fn into_decided_author_round(self) -> AuthorRound {
+    pub fn as_decided_author_round(&self) -> AuthorRound {
         match self {
-            Self::Commit(block) => AuthorRound::new(block.author(), block.round()),
-            Self::Skip(leader) => leader,
+            Self::Commit(block) => block.author_round(),
+            Self::Skip(leader) => *leader,
             Self::Undecided(..) => panic!("Decided block is either Commit or Skip"),
         }
     }

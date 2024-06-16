@@ -51,6 +51,15 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
         result.new_missing
     }
 
+    pub fn next_proposal_round(&self) -> Option<Round> {
+        let round = self.proposer_clock.get_round();
+        if round > self.last_proposed_round {
+            Some(round)
+        } else {
+            None
+        }
+    }
+
     pub fn try_make_proposal(
         &mut self,
         proposal_maker: &mut impl ProposalMaker,

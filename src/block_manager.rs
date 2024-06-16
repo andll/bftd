@@ -19,6 +19,8 @@ pub trait BlockStore: Send + Sync + 'static {
     fn get_blocks_by_round(&self, round: Round) -> Vec<Arc<Block>>;
     fn get_blocks_at_author_round(&self, author: ValidatorIndex, round: Round) -> Vec<Arc<Block>>;
 
+    // Returns all the ancestors of the later_block to the `earlier_round`, assuming that there is
+    // a path to them.
     fn linked_to_round(&self, block: &Arc<Block>, round: Round) -> Vec<Arc<Block>>;
 }
 
@@ -181,28 +183,28 @@ mod tests {
 }
 
 pub type MemoryBlockStore =
-    parking_lot::Mutex<HashMap<ValidatorIndex, BTreeMap<(Round, BlockHash), Arc<Block>>>>;
+    parking_lot::Mutex<BTreeMap<Round, BTreeMap<(ValidatorIndex, BlockHash), Arc<Block>>>>;
 
 impl BlockStore for MemoryBlockStore {
     fn put(&self, block: Arc<Block>) {
         self.lock()
-            .entry(block.author())
+            .entry(block.round())
             .or_default()
-            .insert((block.round(), *block.block_hash()), block);
+            .insert((block.author(), *block.block_hash()), block);
     }
 
     fn get(&self, key: &BlockReference) -> Option<Arc<Block>> {
         self.lock()
-            .get(&key.author)?
-            .get(&(key.round, key.hash))
+            .get(&key.round)?
+            .get(&(key.author, key.hash))
             .cloned()
     }
 
     fn get_own(&self, validator: ValidatorIndex, round: Round) -> Option<Arc<Block>> {
         Some(
             self.lock()
-                .get(&validator)?
-                .range((round, BlockHash::default())..)
+                .get(&round)?
+                .range((validator, BlockHash::MIN)..(validator, BlockHash::MAX))
                 .next()?
                 .1
                 .clone(),
@@ -210,35 +212,76 @@ impl BlockStore for MemoryBlockStore {
     }
 
     fn last_known_round(&self, validator: ValidatorIndex) -> Round {
-        match self.lock().get(&validator) {
-            None => Round::ZERO, // todo - remove and require genesis blocks in store
-            Some(m) => m.keys().last().unwrap().0,
+        // todo performance
+        let lock = self.lock();
+        for (round, map) in lock.iter().rev() {
+            if map
+                .range((validator, BlockHash::MIN)..(validator, BlockHash::MAX))
+                .next()
+                .is_some()
+            {
+                return *round;
+            }
         }
+        Round::ZERO
     }
 
     fn exists(&self, key: &BlockReference) -> bool {
         let lock = self.lock();
-        let m = lock.get(&key.author);
+        let m = lock.get(&key.round);
         match m {
-            Some(map) => map.contains_key(&(key.round, key.hash)),
+            Some(map) => map.contains_key(&(key.author, key.hash)),
             None => false,
         }
     }
 
-    fn get_blocks_by_round(&self, _round: Round) -> Vec<Arc<Block>> {
-        unimplemented!()
+    fn get_blocks_by_round(&self, round: Round) -> Vec<Arc<Block>> {
+        let lock = self.lock();
+        if let Some(map) = lock.get(&round) {
+            // todo - is cloning a good idea here?
+            map.values().cloned().collect()
+        } else {
+            vec![]
+        }
     }
 
-    fn get_blocks_at_author_round(
-        &self,
-        _author: ValidatorIndex,
-        _round: Round,
-    ) -> Vec<Arc<Block>> {
-        unimplemented!()
+    fn get_blocks_at_author_round(&self, author: ValidatorIndex, round: Round) -> Vec<Arc<Block>> {
+        let lock = self.lock();
+        if let Some(map) = lock.get(&round) {
+            // todo - is cloning a good idea here?
+            map.range((author, BlockHash::MIN)..(author, BlockHash::MAX))
+                .map(|(_, b)| b.clone())
+                .collect()
+        } else {
+            vec![]
+        }
     }
 
-    fn linked_to_round(&self, _block: &Arc<Block>, _round: Round) -> Vec<Arc<Block>> {
-        unimplemented!()
+    fn linked_to_round(&self, block: &Arc<Block>, round: Round) -> Vec<Arc<Block>> {
+        let lock = self.lock();
+        let mut parents = vec![block.clone()];
+        for r in (round.0..block.round().0).rev() {
+            let r = Round(r);
+            let map = lock.get(&r);
+            let Some(map) = map else { return vec![] };
+            parents = map
+                .iter()
+                .filter_map(|(_, block)| {
+                    if parents
+                        .iter()
+                        .any(|x| x.parents().contains(block.reference()))
+                    {
+                        Some(block.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if parents.is_empty() {
+                break;
+            }
+        }
+        parents
     }
 }
 
