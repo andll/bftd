@@ -1,3 +1,4 @@
+use crate::block::ValidatorIndex;
 use bytes::Bytes;
 use futures::future::join_all;
 use futures::join;
@@ -39,6 +40,7 @@ pub struct NoisePrivateKey(Arc<Box<[u8]>>);
 pub struct PeerInfo {
     pub address: SocketAddr,
     pub public_key: NoisePublicKey,
+    pub index: ValidatorIndex,
 }
 
 #[derive(Eq, PartialEq, Hash, Clone, Serialize, Deserialize, Default)]
@@ -97,6 +99,10 @@ impl ConnectionPool {
         let mut connection_tasks = Vec::with_capacity(peers.len());
         let (connections_sender, connections) = mpsc::channel(100);
         for (peer_index, peer) in peers.iter().enumerate() {
+            assert_eq!(
+                peer_index as u64, peer.index.0,
+                "Peer index does not match peer position"
+            );
             if peer_index == self_index {
                 continue;
             }
@@ -621,6 +627,7 @@ impl TestConnectionPool {
             .map(|(i, pk)| PeerInfo {
                 public_key: pk.clone(),
                 address: format!("127.0.0.1:{}", base_port + i).parse().unwrap(),
+                index: ValidatorIndex(i as u64),
             })
             .collect();
 

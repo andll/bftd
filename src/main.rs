@@ -5,6 +5,7 @@ use crate::core::Core;
 use crate::crypto::Ed25519Signer;
 use crate::network::{ConnectionPool, NoisePublicKey, PeerInfo};
 use crate::syncer::Syncer;
+use futures::future::join_all;
 use rand::rngs::ThreadRng;
 use std::sync::Arc;
 use std::thread;
@@ -37,6 +38,7 @@ fn main() {
         let peer_info = PeerInfo {
             address: format!("127.0.0.1:{port}").parse().unwrap(),
             public_key: kpb.clone(),
+            index: ValidatorIndex(i as u64),
         };
         noise_private_keys.push(kp.private);
         let protocol_private_key = ed25519_consensus::SigningKey::new(&mut rng);
@@ -85,5 +87,7 @@ fn main() {
         }
     }
     thread::sleep(Duration::from_secs(10));
+    println!("Stopping");
+    runtime.block_on(join_all(syncers.into_iter().map(Syncer::stop)));
     println!("OK");
 }

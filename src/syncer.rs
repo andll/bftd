@@ -17,11 +17,16 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::select;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
-pub struct Syncer<S, B> {
+pub struct Syncer {
+    handle: JoinHandle<()>,
+    stop: oneshot::Sender<()>,
+}
+
+struct SyncerTask<S, B> {
     core: Core<S, B>,
     committer: UniversalCommitter<B>,
     block_store: B,
@@ -29,6 +34,7 @@ pub struct Syncer<S, B> {
     last_proposed_round_sender: tokio::sync::watch::Sender<Round>,
     blocks_receiver: mpsc::Receiver<Arc<Block>>,
     last_decided: AuthorRound,
+    stop: oneshot::Receiver<()>,
 }
 
 struct SyncerInner<B> {
@@ -39,8 +45,12 @@ struct SyncerInner<B> {
     blocks_sender: mpsc::Sender<Arc<Block>>,
 }
 
-impl<S: Signer, B: BlockStore + Clone> Syncer<S, B> {
-    pub fn start(core: Core<S, B>, block_store: B, pool: ConnectionPool) -> JoinHandle<()> {
+impl Syncer {
+    pub fn start<S: Signer, B: BlockStore + Clone>(
+        core: Core<S, B>,
+        block_store: B,
+        pool: ConnectionPool,
+    ) -> Self {
         let committee = core.committee().clone();
         let committer = UniversalCommitterBuilder::new(committee.clone(), block_store.clone())
             .with_pipeline(true)
@@ -69,7 +79,8 @@ impl<S: Signer, B: BlockStore + Clone> Syncer<S, B> {
             })
             .collect();
         let rpc = NetworkRpc::start(pool, peer_routers);
-        let syncer = Self {
+        let (stop_sender, stop_receiver) = oneshot::channel();
+        let syncer = SyncerTask {
             core,
             committer,
             block_store,
@@ -77,10 +88,22 @@ impl<S: Signer, B: BlockStore + Clone> Syncer<S, B> {
             last_proposed_round_sender,
             blocks_receiver,
             last_decided: AuthorRound::default(), // todo load
+            stop: stop_receiver,
         };
-        tokio::spawn(syncer.run())
+        let handle = tokio::spawn(syncer.run());
+        Syncer {
+            handle,
+            stop: stop_sender,
+        }
     }
 
+    pub async fn stop(self) {
+        drop(self.stop);
+        self.handle.await.ok();
+    }
+}
+
+impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
     pub async fn run(mut self) {
         for block in self.core.committee().genesis_blocks() {
             let block = Arc::new(block);
@@ -148,8 +171,13 @@ impl<S: Signer, B: BlockStore + Clone> Syncer<S, B> {
                     proposal_deadline = futures::future::pending().boxed();
                     proposal_deadline_set = false;
                 }
+                _ = &mut self.stop => {
+                    break;
+                }
             }
         }
+        log::debug!("Syncer stopped, waiting for rpc to stop");
+        self.rpc.stop().await;
     }
 
     fn make_proposal(&mut self) -> bool {

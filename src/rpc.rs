@@ -1,6 +1,8 @@
 use crate::network::{Connection, NetworkMessage};
 use crate::{ConnectionPool, NoisePublicKey};
 use bytes::Bytes;
+use futures::future::{join_all, select_all, Either};
+use futures::FutureExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::select;
@@ -12,6 +14,7 @@ use tokio::task::JoinHandle;
 pub struct NetworkRpc {
     handle: JoinHandle<()>,
     peer_task_senders: HashMap<NoisePublicKey, mpsc::Sender<PeerRpcTaskCommand>>,
+    stop: oneshot::Sender<()>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -57,20 +60,24 @@ impl NetworkRpc {
                 let data = PeerTaskData {
                     router,
                     receiver: r,
+                    peer_public_key: k.clone(),
                 };
                 ((k.clone(), s), (k, data))
             })
             .unzip();
         let peer_task_senders = senders.into_iter().collect();
         let peer_task_data = receivers.into_iter().collect();
+        let (stop_sender, stop_receiver) = oneshot::channel();
         let rpc_task = RpcTask {
             pool,
             peer_task_data,
+            stop: stop_receiver,
         };
         let handle = tokio::spawn(rpc_task.run());
         Self {
             handle,
             peer_task_senders,
+            stop: stop_sender,
         }
     }
 
@@ -102,34 +109,75 @@ impl NetworkRpc {
         peer.send(PeerRpcTaskCommand::StreamRpc(request, s)).await?;
         Ok(r)
     }
+
+    pub async fn stop(self) {
+        drop(self.peer_task_senders);
+        drop(self.stop);
+        self.handle.await.ok();
+    }
 }
 
 struct RpcTask {
     pool: ConnectionPool,
     peer_task_data: HashMap<NoisePublicKey, PeerTaskData>,
+    stop: oneshot::Receiver<()>,
 }
 
 struct PeerTaskData {
     router: Box<dyn NetworkRpcRouter>,
     receiver: mpsc::Receiver<PeerRpcTaskCommand>,
+    peer_public_key: NoisePublicKey,
 }
 
 impl RpcTask {
     async fn run(mut self) {
         let mut peer_tasks: HashMap<
             NoisePublicKey,
-            (oneshot::Sender<()>, JoinHandle<PeerTaskData>),
+            (oneshot::Sender<()>, JoinHandle<Option<PeerTaskData>>),
         > = HashMap::new();
-        while let Some(connection) = self.pool.connections().recv().await {
+        loop {
+            let task_wait = if peer_tasks.is_empty() {
+                Either::Left(futures::future::pending())
+            } else {
+                Either::Right(select_all(
+                    peer_tasks
+                        .iter_mut()
+                        .map(|(k, (_, j))| j.map(|r| (k.clone(), r))),
+                ))
+            };
+            let connection = select! {
+                connection = self.pool.connections().recv() => {
+                    connection
+                }
+                ((key, peer_task_data), _, _) = task_wait => {
+                    let peer_task_data = peer_task_data.unwrap();
+                    peer_tasks.remove(&key).unwrap();
+                    if let Some(peer_task_data) = peer_task_data {
+                        self.peer_task_data.insert(key, peer_task_data);
+                    }
+                    continue;
+                }
+                _ = &mut self.stop => {
+                    break;
+                }
+            };
+            let Some(connection) = connection else {
+                panic!("Network shut down while RPC was running");
+            };
             let peer_task_data = if let Some((stop, previous_task)) =
                 peer_tasks.remove(&connection.peer.public_key)
             {
                 drop(stop);
                 previous_task.await.unwrap()
             } else {
-                self.peer_task_data
-                    .remove(&connection.peer.public_key)
-                    .expect("No router for known peer connection")
+                self.peer_task_data.remove(&connection.peer.public_key)
+            };
+            let Some(peer_task_data) = peer_task_data else {
+                log::debug!(
+                    "Rejecting connection to {} because rpc for this node has shut down",
+                    connection.peer.index
+                );
+                continue;
             };
             let (stop_send, stop_rcv) = oneshot::channel();
 
@@ -142,6 +190,14 @@ impl RpcTask {
             let peer_task = tokio::spawn(peer_task.run());
             peer_tasks.insert(peer_public_key, (stop_send, peer_task));
         }
+        if !peer_tasks.is_empty() {
+            join_all(
+                peer_tasks
+                    .iter_mut()
+                    .map(|(k, (_, j))| j.map(|r| (k.clone(), r))),
+            )
+            .await;
+        }
     }
 }
 
@@ -152,18 +208,27 @@ struct PeerTask {
 }
 
 impl PeerTask {
-    async fn run(mut self) -> PeerTaskData {
-        if let Err(err) = self.run_inner().await {
-            log::warn!(
-                "Rpc connection to peer {} terminated with error: {:?}",
-                self.connection.peer.public_key,
-                err
-            );
+    async fn run(mut self) -> Option<PeerTaskData> {
+        let proceed = match self.run_inner().await {
+            Err(err) => {
+                log::warn!(
+                    "Rpc connection to peer {} terminated with error: {:?}",
+                    self.connection.peer.public_key,
+                    err
+                );
+                // Current connection ended with error, waiting for new connection
+                true
+            }
+            Ok(proceed) => proceed,
+        };
+        if proceed {
+            Some(self.peer_task_data)
+        } else {
+            None
         }
-        self.peer_task_data
     }
 
-    async fn run_inner(&mut self) -> RpcResult<()> {
+    async fn run_inner(&mut self) -> RpcResult<bool> {
         let mut tag = 0u64;
         let mut rpc_requests: HashMap<u64, oneshot::Sender<RpcResult<NetworkResponse>>> =
             HashMap::new();
@@ -200,7 +265,8 @@ impl PeerTask {
         loop {
             select! {
                 message = self.connection.receiver.recv() => {
-                    let Some(message) = message else {return Ok(())};
+                    // network connection dropped, return true to wait for next connection
+                    let Some(message) = message else {return Ok(true)};
                     let message = bincode::deserialize::<RpcMessage>(&message.data)?;
                     match message {
                         RpcMessage::RpcRequest(tag, request) => {
@@ -235,7 +301,8 @@ impl PeerTask {
                                     bytes
                                 } else {
                                     log::warn!("Terminating connection to {} after receiving absurd amount of bytes in a stream", self.connection.peer.public_key);
-                                    return Ok(());
+                                    // terminating current network connection, but allowing to start next peer task with new connection
+                                    return Ok(true);
                                 };
                                 Self::send_message(&mut self.connection.sender, &RpcMessage::RpcStreamBufferAck(tag, *bytes)).await?;
                                 ch.send(Ok(item)).await.ok(); // Continue to receive stream(receiver disconnected)?
@@ -253,7 +320,8 @@ impl PeerTask {
                     }
                 }
                 command = self.peer_task_data.receiver.recv() => {
-                    let Some(command): Option<PeerRpcTaskCommand> = command else {return Ok(())};
+                    // command received dropped, return false to stop peer processing
+                    let Some(command): Option<PeerRpcTaskCommand> = command else {return Ok(false)};
                     // todo duplicated code (w/ initial command processing)
                     match command {
                         PeerRpcTaskCommand::Rpc(request, ch) => {
@@ -269,7 +337,8 @@ impl PeerTask {
                     }
                 }
                 _ = &mut self.stop => {
-                    return Ok(());
+                    // stop signalled, connection is being replaced. return true to switch to next connection
+                    return Ok(true);
                 }
             }
         }

@@ -2,8 +2,8 @@ use crate::crypto::{Blake2Hasher, Hasher, SignatureVerifier, Signer};
 use anyhow::ensure;
 use bytes::{BufMut, Bytes, BytesMut};
 use serde::{Deserialize, Serialize};
-use std::fmt;
 use std::ops::Add;
+use std::{fmt, mem};
 
 pub struct Block {
     reference: BlockReference,
@@ -325,6 +325,20 @@ impl Round {
 impl AuthorRound {
     pub fn new(author: ValidatorIndex, round: Round) -> Self {
         Self { author, round }
+    }
+}
+
+impl ValidatorIndex {
+    pub fn take_vec<T>(&self, v: &mut Vec<Option<T>>) -> Option<T> {
+        let mut r = None;
+        mem::swap(&mut r, v.get_mut(self.0 as usize).unwrap());
+        r
+    }
+
+    pub fn put_vec<T>(&self, v: &mut Vec<Option<T>>, t: T) -> Option<T> {
+        let mut r = Some(t);
+        mem::swap(&mut r, v.get_mut(self.0 as usize).unwrap());
+        r
     }
 }
 
