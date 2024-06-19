@@ -26,6 +26,7 @@ mod threshold_clock;
 fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
+        .with_thread_names(true)
         .init();
     let builder = snow::Builder::new("Noise_NN_25519_ChaChaPoly_BLAKE2s".parse().unwrap());
     let num_validators = 10usize;
@@ -56,17 +57,19 @@ fn main() {
         peers.push(peer_info);
     }
     let committee = Arc::new(Committee::new(validators));
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .unwrap();
     let mut syncers = Vec::with_capacity(num_validators);
+    let mut validator_runtimes = vec![];
     for (i, (noise_private_key, protocol_private_key)) in noise_private_keys
         .into_iter()
         .zip(protocol_private_keys.into_iter())
         .enumerate()
     {
         let validator_index = ValidatorIndex(i as u64);
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .thread_name(format!("[{validator_index}]"))
+            .enable_all()
+            .build()
+            .unwrap();
         let address = committee.validator(validator_index).network_address;
         let pool = runtime
             .block_on(ConnectionPool::start(
@@ -88,9 +91,14 @@ fn main() {
             let syncer = Syncer::start(core, block_store, pool);
             syncers.push(syncer);
         }
+        validator_runtimes.push(runtime);
     }
     thread::sleep(Duration::from_secs(10));
     println!("Stopping");
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
     runtime.block_on(join_all(syncers.into_iter().map(Syncer::stop)));
     println!("OK");
 }

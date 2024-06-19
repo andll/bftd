@@ -120,7 +120,7 @@ impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
             select! {
                 block = self.blocks_receiver.recv() => {
                     let Some(block) = block else {return;};
-                    tracing::debug!("[{}] Received block {}", self.core.validator_index(), block.reference());
+                    tracing::debug!("Received block {}", block.reference());
                     // todo need more block verification
                     let _new_missing = self.core.add_block(block);
                     // todo handle missing blocks
@@ -132,10 +132,10 @@ impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
                             // todo - exists method instead of get
                             if self.block_store.get_blocks_at_author_round(leader, check_round).is_empty() {
                                 if !self.rpc.is_connected(self.committee().network_key(leader)) {
-                                    tracing::debug!("[{}] Missing leader {}{}, not waiting because there is no connection", self.core.validator_index(), leader, check_round);
+                                    tracing::debug!("Missing leader {}{}, not waiting because there is no connection", leader, check_round);
                                     continue;
                                 }
-                                tracing::debug!("[{}] Not ready to make proposal, missing {}{}", self.core.validator_index(), leader, check_round);
+                                tracing::debug!("Not ready to make proposal, missing {}{}", leader, check_round);
                                 ready = false;
                                 break;
                             }
@@ -156,21 +156,21 @@ impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
                         self.last_decided = c.author_round();
                         match c  {
                             DecidedCommit::Commit(c) => {
-                                tracing::debug!("[{}] Committed {}", self.core.validator_index(), c.reference());
+                                tracing::debug!("Committed {}", c.reference());
                                 committed += 1;
                             },
                             DecidedCommit::Skip(author_round) => {
-                                tracing::debug!("[{}] Skipping commit at {}", self.core.validator_index(), author_round);
+                                tracing::debug!("Skipping commit at {}", author_round);
                                 skipped += 1;
                             }
                         }
                     }
                     if (committed % 10 == 0 && committed > 0) || (skipped % 10 == 0 && skipped > 0) {
-                        println!("[{}] stat: committed {}, skipped {}", self.core.validator_index(), committed, skipped);
+                        println!("stat: committed {}, skipped {}", committed, skipped);
                     }
                 }
                 _ = &mut proposal_deadline => {
-                    tracing::debug!("[{}] Leader timeout at round {}", self.core.validator_index(), self.core.next_proposal_round().unwrap_or_default());
+                    tracing::debug!("Leader timeout at round {}", self.core.next_proposal_round().unwrap_or_default());
                     self.make_proposal();
                     proposal_deadline = futures::future::pending().boxed();
                     proposal_deadline_set = false;
@@ -187,11 +187,7 @@ impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
     fn make_proposal(&mut self) -> bool {
         let proposal = self.core.try_make_proposal(&mut ());
         if let Some(proposal) = proposal {
-            tracing::debug!(
-                "[{}] Generated proposal {}",
-                self.core.validator_index(),
-                proposal
-            );
+            tracing::debug!("Generated proposal {}", proposal);
             self.last_proposed_round_sender
                 .send(proposal.reference().round)
                 .ok();
