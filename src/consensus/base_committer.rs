@@ -161,7 +161,7 @@ impl<B: BlockStore> BaseCommitter<B> {
             };
 
             if is_vote {
-                log::trace!(
+                tracing::trace!(
                     "[{self}] {reference} is a vote for {}",
                     leader_block.reference()
                 );
@@ -226,7 +226,7 @@ impl<B: BlockStore> BaseCommitter<B> {
                 .iter()
                 .all(|parent| parent.author != leader)
             {
-                log::trace!(
+                tracing::trace!(
                     "[{self}] {} is a blame for leader {}",
                     voting_block.reference(),
                     format_author_round(leader, voting_round.previous())
@@ -250,7 +250,7 @@ impl<B: BlockStore> BaseCommitter<B> {
             .map(|b| self.committee.get_stake(b.author()))
             .sum();
         if total_stake < self.committee.f2_threshold {
-            log::debug!(
+            tracing::debug!(
                 "Not enough support for: {}. Stake not enough: {} < {}",
                 leader_block.round(),
                 total_stake,
@@ -264,7 +264,7 @@ impl<B: BlockStore> BaseCommitter<B> {
         for decision_block in &decision_blocks {
             let authority = decision_block.reference().author;
             if self.is_certificate(decision_block, leader_block, &mut all_votes) {
-                log::trace!(
+                tracing::trace!(
                     "[{self}] {} is a certificate for leader {}",
                     decision_block.reference(),
                     leader_block.reference()
@@ -290,7 +290,7 @@ impl<B: BlockStore> BaseCommitter<B> {
         let anchors = leaders.filter(|x| leader.round + self.options.wave_length <= x.round());
 
         for anchor in anchors {
-            log::trace!(
+            tracing::trace!(
                 "[{self}] Trying to indirect-decide {} using anchor {anchor}",
                 format_author_round(leader.author, leader.round),
             );

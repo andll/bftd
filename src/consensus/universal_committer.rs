@@ -43,22 +43,22 @@ impl<B: BlockStore> UniversalCommitter<B> {
 
                 // now that we reached the last committed leader we can stop the commit rule
                 if leader == last_decided {
-                    log::debug!("Leader {leader} - reached last committed, now exit",);
+                    tracing::debug!("Leader {leader} - reached last committed, now exit",);
                     break 'outer;
                 }
 
-                log::debug!("Trying to decide {leader} with {committer}",);
+                tracing::debug!("Trying to decide {leader} with {committer}",);
 
                 // Try to directly decide the leader.
                 let status = committer.try_direct_decide(leader);
-                log::debug!("Outcome of direct rule: {status}");
+                tracing::debug!("Outcome of direct rule: {status}");
 
                 // If we can't directly decide the leader, try to indirectly decide it.
                 if status.is_decided() {
                     leaders.push_front(status);
                 } else {
                     let status = committer.try_indirect_decide(leader, leaders.iter());
-                    log::debug!("Outcome of indirect rule: {status}");
+                    tracing::debug!("Outcome of indirect rule: {status}");
                     leaders.push_front(status);
                 }
             }

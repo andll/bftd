@@ -5,6 +5,8 @@ use futures::future::{join_all, select_all, Either};
 use futures::FutureExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tokio::select;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -14,6 +16,7 @@ use tokio::task::JoinHandle;
 pub struct NetworkRpc {
     handle: JoinHandle<()>,
     peer_task_senders: HashMap<NoisePublicKey, mpsc::Sender<PeerRpcTaskCommand>>,
+    connection_status: HashMap<NoisePublicKey, Arc<AtomicBool>>,
     stop: oneshot::Sender<()>,
 }
 
@@ -53,6 +56,10 @@ impl NetworkRpc {
         pool: ConnectionPool,
         peer_routers: HashMap<NoisePublicKey, Box<dyn NetworkRpcRouter>>,
     ) -> Self {
+        let connection_status: HashMap<_, _> = peer_routers
+            .keys()
+            .map(|k| (k.clone(), Default::default()))
+            .collect();
         let (senders, receivers): (Vec<_>, Vec<_>) = peer_routers
             .into_iter()
             .map(|(k, router)| {
@@ -71,12 +78,14 @@ impl NetworkRpc {
         let rpc_task = RpcTask {
             pool,
             peer_task_data,
+            connection_status: connection_status.clone(),
             stop: stop_receiver,
         };
         let handle = tokio::spawn(rpc_task.run());
         Self {
             handle,
             peer_task_senders,
+            connection_status,
             stop: stop_sender,
         }
     }
@@ -110,6 +119,13 @@ impl NetworkRpc {
         Ok(r)
     }
 
+    pub fn is_connected(&self, peer: &NoisePublicKey) -> bool {
+        let Some(status) = self.connection_status.get(&peer) else {
+            return false;
+        };
+        status.load(Ordering::Relaxed)
+    }
+
     pub async fn stop(self) {
         drop(self.peer_task_senders);
         drop(self.stop);
@@ -120,6 +136,7 @@ impl NetworkRpc {
 struct RpcTask {
     pool: ConnectionPool,
     peer_task_data: HashMap<NoisePublicKey, PeerTaskData>,
+    connection_status: HashMap<NoisePublicKey, Arc<AtomicBool>>,
     stop: oneshot::Receiver<()>,
 }
 
@@ -151,6 +168,7 @@ impl RpcTask {
                 }
                 ((key, peer_task_data), _, _) = task_wait => {
                     let peer_task_data = peer_task_data.unwrap();
+                    self.connection_status.get(&key).expect("Unexpected validator connection public key").store(false, Ordering::Relaxed);
                     peer_tasks.remove(&key).unwrap();
                     if let Some(peer_task_data) = peer_task_data {
                         self.peer_task_data.insert(key, peer_task_data);
@@ -170,10 +188,14 @@ impl RpcTask {
                 drop(stop);
                 previous_task.await.unwrap()
             } else {
+                self.connection_status
+                    .get(&connection.peer.public_key)
+                    .expect("Unexpected validator connection public key")
+                    .store(true, Ordering::Relaxed);
                 self.peer_task_data.remove(&connection.peer.public_key)
             };
             let Some(peer_task_data) = peer_task_data else {
-                log::debug!(
+                tracing::debug!(
                     "Rejecting connection to {} because rpc for this node has shut down",
                     connection.peer.index
                 );
@@ -211,7 +233,7 @@ impl PeerTask {
     async fn run(mut self) -> Option<PeerTaskData> {
         let proceed = match self.run_inner().await {
             Err(err) => {
-                log::warn!(
+                tracing::warn!(
                     "Rpc connection to peer {} terminated with error: {:?}",
                     self.connection.peer.public_key,
                     err
@@ -300,7 +322,7 @@ impl PeerTask {
                                 *bytes = if let Some(bytes) = bytes.checked_add(item.0.len() as u64) {
                                     bytes
                                 } else {
-                                    log::warn!("Terminating connection to {} after receiving absurd amount of bytes in a stream", self.connection.peer.public_key);
+                                    tracing::warn!("Terminating connection to {} after receiving absurd amount of bytes in a stream", self.connection.peer.public_key);
                                     // terminating current network connection, but allowing to start next peer task with new connection
                                     return Ok(true);
                                 };

@@ -118,12 +118,8 @@ impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
         loop {
             select! {
                 block = self.blocks_receiver.recv() => {
-                    // use rand::Rng;
-                    // use rand::rngs::ThreadRng;
-                    // let d = ThreadRng::default().gen_range(0..1000);
-                    // tokio::time::sleep(std::time::Duration::from_micros(d)).await;
                     let Some(block) = block else {return;};
-                    log::debug!("[{}] Received block {}", self.core.validator_index(), block.reference());
+                    tracing::debug!("[{}] Received block {}", self.core.validator_index(), block.reference());
                     // todo need more block verification
                     let _new_missing = self.core.add_block(block);
                     // todo handle missing blocks
@@ -134,8 +130,11 @@ impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
                         for leader in leaders {
                             // todo - exists method instead of get
                             if self.block_store.get_blocks_at_author_round(leader, check_round).is_empty() {
-                                log::debug!("[{}] Not ready to make proposal, missing {}{}", self.core.validator_index(), leader, check_round);
-                                // todo check network connection to the leader
+                                if !self.rpc.is_connected(self.committee().network_key(leader)) {
+                                    tracing::debug!("[{}] Missing leader {}{}, not waiting because there is no connection", self.core.validator_index(), leader, check_round);
+                                    continue;
+                                }
+                                tracing::debug!("[{}] Not ready to make proposal, missing {}{}", self.core.validator_index(), leader, check_round);
                                 ready = false;
                                 break;
                             }
@@ -156,11 +155,11 @@ impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
                         self.last_decided = c.author_round();
                         match c  {
                             DecidedCommit::Commit(c) => {
-                                log::debug!("[{}] Committed {}", self.core.validator_index(), c.reference());
+                                tracing::debug!("[{}] Committed {}", self.core.validator_index(), c.reference());
                                 committed += 1;
                             },
                             DecidedCommit::Skip(author_round) => {
-                                log::debug!("[{}] Skipping commit at {}", self.core.validator_index(), author_round);
+                                tracing::debug!("[{}] Skipping commit at {}", self.core.validator_index(), author_round);
                                 skipped += 1;
                             }
                         }
@@ -170,6 +169,7 @@ impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
                     }
                 }
                 _ = &mut proposal_deadline => {
+                    tracing::debug!("[{}] Leader timeout at round {}", self.core.validator_index(), self.core.next_proposal_round().unwrap_or_default());
                     self.make_proposal();
                     proposal_deadline = futures::future::pending().boxed();
                     proposal_deadline_set = false;
@@ -179,14 +179,14 @@ impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
                 }
             }
         }
-        log::debug!("Syncer stopped, waiting for rpc to stop");
+        tracing::debug!("Syncer stopped, waiting for rpc to stop");
         self.rpc.stop().await;
     }
 
     fn make_proposal(&mut self) -> bool {
         let proposal = self.core.try_make_proposal(&mut ());
         if let Some(proposal) = proposal {
-            log::debug!(
+            tracing::debug!(
                 "[{}] Generated proposal {}",
                 self.core.validator_index(),
                 proposal
@@ -198,6 +198,10 @@ impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
         } else {
             false
         }
+    }
+
+    fn committee(&self) -> &Arc<Committee> {
+        self.core.committee()
     }
 }
 
@@ -288,7 +292,7 @@ impl<B: BlockStore> PeerRouter<B> {
         if let Err(err) =
             Self::receive_subscription_inner(peer, receiver, block_sender, committee).await
         {
-            log::warn!("Error receiving stream from {peer}: {err}");
+            tracing::warn!("Error receiving stream from {peer}: {err}");
         }
     }
 }

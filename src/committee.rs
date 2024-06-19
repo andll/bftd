@@ -82,6 +82,10 @@ impl Committee {
             .expect("Validator not found")
     }
 
+    pub fn network_key(&self, index: ValidatorIndex) -> &NoisePublicKey {
+        &self.validator(index).network_key
+    }
+
     pub fn enumerate_validators(&self) -> impl Iterator<Item = (ValidatorIndex, &ValidatorInfo)> {
         self.validators
             .iter()

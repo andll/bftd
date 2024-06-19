@@ -198,13 +198,13 @@ impl PeerTask {
                 task.await.ok();
                 return;
             }
-            log::debug!(
+            tracing::debug!(
                 "Connection to {} established({})",
                 self.peer.public_key,
                 was_incoming
             );
             task.await.ok();
-            log::debug!("Connection to {} dropped", self.peer.public_key);
+            tracing::debug!("Connection to {} dropped", self.peer.public_key);
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
@@ -292,7 +292,7 @@ impl ConnectionTask {
     ) {
         while let Some(message) = receiver.recv().await {
             if let Err(err) = writer.write_frame(&message.data).await {
-                log::debug!("Failed to write to {}: {}", peer.public_key, err);
+                tracing::debug!("Failed to write to {}: {}", peer.public_key, err);
                 return;
             }
         }
@@ -313,7 +313,7 @@ impl ConnectionTask {
                     }
                 }
                 Err(err) => {
-                    log::debug!("Failed to read from {}: {}", peer.public_key, err);
+                    tracing::debug!("Failed to read from {}: {}", peer.public_key, err);
                     return;
                 }
             }
@@ -329,14 +329,14 @@ impl Acceptor {
                 pk: self.pk.clone(),
                 socket,
             };
-            log::debug!("Incoming connection from {addr}");
+            tracing::debug!("Incoming connection from {addr}");
             // tokio::spawn(handshake.run_incoming()); // todo limit, track join handle
             match handshake.run_incoming().await {
                 Ok((reader, writer, remote_key)) => {
                     let sender = self.connection_senders.get_mut(&remote_key);
                     match sender {
                         Some(sender) => {
-                            log::debug!(
+                            tracing::debug!(
                                 "Accepted incoming connection from {}, key {}",
                                 addr,
                                 remote_key,
@@ -348,11 +348,11 @@ impl Acceptor {
                             };
                             sender.send(connection).await.ok();
                         }
-                        None => log::warn!("Incoming connection from {addr} with unknown static key {remote_key:?}")
+                        None => tracing::warn!("Incoming connection from {addr} with unknown static key {remote_key:?}")
                     }
                 }
                 Err(e) => {
-                    log::warn!("Failed incoming handshake: {e}");
+                    tracing::warn!("Failed incoming handshake: {e}");
                 }
             }
         }

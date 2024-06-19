@@ -10,6 +10,7 @@ use rand::rngs::ThreadRng;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
+use tracing_subscriber::EnvFilter;
 
 mod block;
 mod block_manager;
@@ -23,7 +24,9 @@ mod syncer;
 mod threshold_clock;
 
 fn main() {
-    env_logger::init();
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
     let builder = snow::Builder::new("Noise_NN_25519_ChaChaPoly_BLAKE2s".parse().unwrap());
     let num_validators = 10usize;
     let mut peers = Vec::with_capacity(num_validators);
