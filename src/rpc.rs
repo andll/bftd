@@ -5,11 +5,13 @@ use futures::future::{join_all, select_all, Either};
 use futures::FutureExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::select;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, Notify, oneshot};
 use tokio::task::JoinHandle;
+use tokio::time::Instant;
 
 // todo task accounting / spawning to avoid deadlocks
 // todo stream buffer control test
@@ -17,6 +19,8 @@ pub struct NetworkRpc {
     handle: JoinHandle<()>,
     peer_task_senders: HashMap<NoisePublicKey, mpsc::Sender<PeerRpcTaskCommand>>,
     connection_status: HashMap<NoisePublicKey, Arc<AtomicBool>>,
+    connection_counter: Arc<AtomicUsize>,
+    connection_status_changed: Arc<Notify>,
     stop: oneshot::Sender<()>,
 }
 
@@ -75,10 +79,14 @@ impl NetworkRpc {
         let peer_task_senders = senders.into_iter().collect();
         let peer_task_data = receivers.into_iter().collect();
         let (stop_sender, stop_receiver) = oneshot::channel();
+        let connection_status_changed = Arc::new(Notify::new());
+        let connection_counter = Arc::new(AtomicUsize::default());
         let rpc_task = RpcTask {
             pool,
             peer_task_data,
             connection_status: connection_status.clone(),
+            connection_counter: connection_counter.clone(),
+            connection_status_changed: connection_status_changed.clone(),
             stop: stop_receiver,
         };
         let handle = tokio::spawn(rpc_task.run());
@@ -86,6 +94,8 @@ impl NetworkRpc {
             handle,
             peer_task_senders,
             connection_status,
+            connection_counter,
+            connection_status_changed,
             stop: stop_sender,
         }
     }
@@ -126,6 +136,30 @@ impl NetworkRpc {
         status.load(Ordering::Relaxed)
     }
 
+    pub async fn wait_connected(&self, timeout: Duration) {
+        let started = Instant::now();
+        let deadline = started + timeout;
+        tracing::debug!("Waiting to connect to all nodes");
+        loop {
+            let notified = self.connection_status_changed.notified();
+            if self.is_all_connected() {
+                tracing::debug!("All nodes connected in {:?}", started.elapsed());
+                return;
+            }
+            select! {
+                _ = notified => {}
+                _ = tokio::time::sleep_until(deadline) => {
+                    tracing::debug!("Not every node connected, stopping waiting on timeout");
+                    return;
+                }
+            }
+        }
+    }
+
+    fn is_all_connected(&self) -> bool {
+        self.connection_counter.load(Ordering::Relaxed) == self.connection_status.len() - 1
+    }
+
     pub async fn stop(self) {
         drop(self.peer_task_senders);
         drop(self.stop);
@@ -137,6 +171,8 @@ struct RpcTask {
     pool: ConnectionPool,
     peer_task_data: HashMap<NoisePublicKey, PeerTaskData>,
     connection_status: HashMap<NoisePublicKey, Arc<AtomicBool>>,
+    connection_counter: Arc<AtomicUsize>,
+    connection_status_changed: Arc<Notify>,
     stop: oneshot::Receiver<()>,
 }
 
@@ -169,6 +205,8 @@ impl RpcTask {
                 ((key, peer_task_data), _, _) = task_wait => {
                     let peer_task_data = peer_task_data.unwrap();
                     self.connection_status.get(&key).expect("Unexpected validator connection public key").store(false, Ordering::Relaxed);
+                    self.connection_counter.fetch_sub(1, Ordering::Relaxed);
+                    self.connection_status_changed.notify_waiters();
                     peer_tasks.remove(&key).unwrap();
                     if let Some(peer_task_data) = peer_task_data {
                         self.peer_task_data.insert(key, peer_task_data);
@@ -192,6 +230,8 @@ impl RpcTask {
                     .get(&connection.peer.public_key)
                     .expect("Unexpected validator connection public key")
                     .store(true, Ordering::Relaxed);
+                self.connection_counter.fetch_add(1, Ordering::Relaxed);
+                self.connection_status_changed.notify_waiters();
                 self.peer_task_data.remove(&connection.peer.public_key)
             };
             let Some(peer_task_data) = peer_task_data else {

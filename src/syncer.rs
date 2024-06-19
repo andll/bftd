@@ -115,6 +115,7 @@ impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
         let mut proposal_deadline: Pin<Box<dyn Future<Output = ()> + Send>> =
             futures::future::pending().boxed();
         let mut proposal_deadline_set = false;
+        self.rpc.wait_connected(Duration::from_secs(2)).await;
         loop {
             select! {
                 block = self.blocks_receiver.recv() => {
