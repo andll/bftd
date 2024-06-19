@@ -1,4 +1,4 @@
-use crate::block::{Block, BlockReference, Round, ValidatorIndex};
+use crate::block::{Block, BlockReference, ChainId, Round, ValidatorIndex};
 use crate::block_manager::{BlockManager, BlockStore};
 use crate::committee::Committee;
 use crate::crypto::{Blake2Hasher, Signer};
@@ -73,6 +73,8 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
         let block = Block::new(
             round,
             self.index,
+            ChainId::CHAIN_ID_TEST,
+            0, /* time_ns */
             &payload,
             parents,
             &self.signer,

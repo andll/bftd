@@ -1,4 +1,4 @@
-use crate::block::{Block, Round, ValidatorIndex};
+use crate::block::{Block, ChainId, Round, ValidatorIndex};
 use crate::crypto::{Blake2Hasher, Ed25519Verifier};
 use crate::NoisePublicKey;
 use anyhow::{bail, ensure};
@@ -89,9 +89,9 @@ impl Committee {
             .map(|(i, vi)| (ValidatorIndex(i as u64), vi))
     }
 
-    pub fn genesis_blocks(&self) -> Vec<Block> {
+    pub fn genesis_blocks(&self, chain_id: ChainId) -> Vec<Block> {
         self.enumerate_validators()
-            .map(|(i, _)| Block::genesis(i))
+            .map(|(i, _)| Block::genesis(chain_id, i))
             .collect()
     }
 

@@ -1,4 +1,4 @@
-use crate::block::{AuthorRound, Block, BlockReference, Round, ValidatorIndex};
+use crate::block::{AuthorRound, Block, BlockReference, ChainId, Round, ValidatorIndex};
 use crate::block_manager::BlockStore;
 use crate::committee::Committee;
 use crate::consensus::{DecidedCommit, UniversalCommitter, UniversalCommitterBuilder};
@@ -105,7 +105,7 @@ impl Syncer {
 
 impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
     pub async fn run(mut self) {
-        for block in self.core.committee().genesis_blocks() {
+        for block in self.core.committee().genesis_blocks(ChainId::CHAIN_ID_TEST) {
             let block = Arc::new(block);
             self.core.add_block(block);
         }

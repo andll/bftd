@@ -8,6 +8,8 @@ use std::ops::Add;
 pub struct Block {
     reference: BlockReference,
     signature: BlockSignature,
+    chain_id: ChainId,
+    time_ns: u64,
     parents: Vec<BlockReference>,
     payload_offset: usize,
     data: Bytes,
@@ -29,6 +31,9 @@ pub struct ValidatorIndex(pub u64);
 )]
 pub struct Round(pub u64);
 
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ChainId(pub [u8; CHAIN_ID_LENGTH]);
+
 #[derive(
     Default, Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize,
 )]
@@ -39,6 +44,7 @@ pub struct AuthorRound {
 
 const SIGNATURE_LENGTH: usize = 64;
 const BLOCK_HASH_LENGTH: usize = 32;
+const CHAIN_ID_LENGTH: usize = 32;
 pub const MAX_PARENTS: usize = 1024;
 
 #[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq)]
@@ -51,7 +57,9 @@ impl Block {
     const SIGNATURE_OFFSET: usize = Self::HASH_OFFSET + BLOCK_HASH_LENGTH;
     const ROUND_OFFSET: usize = Self::SIGNATURE_OFFSET + SIGNATURE_LENGTH;
     const AUTHOR_OFFSET: usize = Self::ROUND_OFFSET + 8;
-    const PARENTS_COUNT_OFFSET: usize = Self::AUTHOR_OFFSET + 8;
+    const CHAIN_ID_OFFSET: usize = Self::AUTHOR_OFFSET + 8;
+    const TIME_OFFSET: usize = Self::CHAIN_ID_OFFSET + CHAIN_ID_LENGTH;
+    const PARENTS_COUNT_OFFSET: usize = Self::TIME_OFFSET + 8;
     const PARENTS_OFFSET: usize = Self::PARENTS_COUNT_OFFSET + 4;
 
     pub fn reference(&self) -> &BlockReference {
@@ -102,6 +110,8 @@ impl Block {
     pub fn new(
         round: Round,
         author: ValidatorIndex,
+        chain_id: ChainId,
+        time_ns: u64,
         payload: &[u8],
         parents: Vec<BlockReference>,
         signer: &impl Signer,
@@ -114,6 +124,8 @@ impl Block {
         data.put_bytes(0, Self::ROUND_OFFSET);
         data.put_u64_le(round.0);
         data.put_u64_le(author.0);
+        data.put_slice(&chain_id.0);
+        data.put_u64_le(time_ns);
         data.put_u32_le(parents.len() as u32);
         for parent in &parents {
             assert!(
@@ -139,6 +151,8 @@ impl Block {
                 hash,
             },
             signature,
+            chain_id,
+            time_ns,
             parents,
             payload_offset,
             data,
@@ -194,6 +208,16 @@ impl Block {
                 .try_into()
                 .unwrap(),
         ));
+        let chain_id = ChainId(
+            data[Self::CHAIN_ID_OFFSET..Self::CHAIN_ID_OFFSET + CHAIN_ID_LENGTH]
+                .try_into()
+                .unwrap(),
+        );
+        let time_ns = u64::from_le_bytes(
+            data[Self::TIME_OFFSET..Self::TIME_OFFSET + 8]
+                .try_into()
+                .unwrap(),
+        );
         let parents_count = u32::from_le_bytes(
             data[Self::PARENTS_COUNT_OFFSET..Self::PARENTS_COUNT_OFFSET + 4]
                 .try_into()
@@ -226,16 +250,20 @@ impl Block {
         Ok(Self {
             reference,
             signature,
+            chain_id,
+            time_ns,
             parents,
             payload_offset: offset,
             data,
         })
     }
 
-    pub fn genesis(author: ValidatorIndex) -> Self {
+    pub fn genesis(chain_id: ChainId, author: ValidatorIndex) -> Self {
         Self::new(
             Round::ZERO,
             author,
+            chain_id,
+            0, /* time_ns */
             &[],
             vec![],
             &EmptySignature,
@@ -247,6 +275,10 @@ impl Block {
 impl BlockHash {
     pub const MIN: Self = Self([0x0; BLOCK_HASH_LENGTH]);
     pub const MAX: Self = Self([0xff; BLOCK_HASH_LENGTH]);
+}
+
+impl ChainId {
+    pub const CHAIN_ID_TEST: Self = Self([1; CHAIN_ID_LENGTH]);
 }
 
 struct EmptySignature;
@@ -414,13 +446,24 @@ pub mod tests {
             author: ValidatorIndex(16),
             hash: BlockHash([3u8; BLOCK_HASH_LENGTH]),
         };
-        let block = Block::new(round, author, &payload, vec![parent], &signature, &hash);
+        let block = Block::new(
+            round,
+            author,
+            ChainId::CHAIN_ID_TEST,
+            15,
+            &payload,
+            vec![parent],
+            &signature,
+            &hash,
+        );
 
         let block2 = Block::from_bytes_unchecked(block.data().clone()).unwrap();
         assert_eq!(block2.reference().author, author);
         assert_eq!(block2.reference().round, round);
         assert_eq!(block2.reference().hash.0, hash);
         assert_eq!(block2.signature().0, signature);
+        assert_eq!(block2.chain_id, ChainId::CHAIN_ID_TEST);
+        assert_eq!(block2.time_ns, 15);
         assert_eq!(block2.parents().len(), 1);
         assert_eq!(block2.parents().get(0).unwrap(), &parent);
         assert_eq!(block2.payload(), &payload);
@@ -467,6 +510,8 @@ pub mod tests {
         Arc::new(Block::new(
             Round(round),
             ValidatorIndex(author),
+            ChainId::CHAIN_ID_TEST,
+            0, /* time_ns */
             &[],
             parents,
             &BR_SIGNATURE,
