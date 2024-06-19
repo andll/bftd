@@ -1,7 +1,7 @@
 use crate::block::{AuthorRound, Block, BlockReference, Round, ValidatorIndex};
 use crate::block_manager::BlockStore;
 use crate::committee::Committee;
-use crate::consensus::{LeaderStatus, UniversalCommitter, UniversalCommitterBuilder};
+use crate::consensus::{DecidedCommit, UniversalCommitter, UniversalCommitterBuilder};
 use crate::core::Core;
 use crate::crypto::Signer;
 use crate::rpc::{
@@ -151,15 +151,18 @@ impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
                             }
                         }
                     }
-                    let leader_status = self.committer.try_commit(self.last_decided, *self.last_proposed_round_sender.borrow());
-                    for c in leader_status {
-                        self.last_decided = c.as_decided_author_round();
-                        if let LeaderStatus::Commit(c) = c {
-                            log::debug!("[{}] Committed {}", self.core.validator_index(), c.reference());
-                            committed += 1;
-                        } else if let LeaderStatus::Skip(author_round) = c {
-                            log::debug!("[{}] Skipping commit at {}", self.core.validator_index(), author_round);
-                            skipped += 1;
+                    let commits = self.committer.try_commit(self.last_decided, *self.last_proposed_round_sender.borrow());
+                    for c in commits {
+                        self.last_decided = c.author_round();
+                        match c  {
+                            DecidedCommit::Commit(c) => {
+                                log::debug!("[{}] Committed {}", self.core.validator_index(), c.reference());
+                                committed += 1;
+                            },
+                            DecidedCommit::Skip(author_round) => {
+                                log::debug!("[{}] Skipping commit at {}", self.core.validator_index(), author_round);
+                                skipped += 1;
+                            }
                         }
                     }
                     if (committed % 10 == 0 && committed > 0) || (skipped % 10 == 0 && skipped > 0) {

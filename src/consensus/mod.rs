@@ -1,7 +1,7 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::block::{format_author_round, AuthorRound, Block, Round, ValidatorIndex};
+use crate::block::{format_author_round, AuthorRound, Block, Round};
 use std::fmt;
 use std::sync::Arc;
 
@@ -21,17 +21,29 @@ pub use universal_committer::{UniversalCommitter, UniversalCommitterBuilder};
 /// leaders, providing a richer status allows for easier debugging, testing, and composition with
 /// advanced commit strategies.
 // #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-#[derive(Clone)]
-pub enum LeaderStatus {
+enum LeaderStatus {
     Commit(Arc<Block>),
     Skip(AuthorRound),
     Undecided(AuthorRound),
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-enum Decision {
-    Direct,
-    Indirect,
+#[derive(Clone)]
+pub enum DecidedCommit {
+    Commit(Arc<Block>),
+    Skip(AuthorRound),
+}
+
+impl DecidedCommit {
+    pub(crate) fn author_round(&self) -> AuthorRound {
+        match self {
+            DecidedCommit::Commit(block) => block.author_round(),
+            DecidedCommit::Skip(author_round) => *author_round,
+        }
+    }
+}
+
+pub trait CommitStore {
+    fn commit_leader(&self, leader_status: DecidedCommit);
 }
 
 impl LeaderStatus {
@@ -43,11 +55,11 @@ impl LeaderStatus {
         }
     }
 
-    pub fn authority(&self) -> ValidatorIndex {
+    pub fn into_decided(self) -> Option<DecidedCommit> {
         match self {
-            Self::Commit(block) => block.author(),
-            Self::Skip(leader) => leader.author,
-            Self::Undecided(leader) => leader.author,
+            LeaderStatus::Commit(block) => Some(DecidedCommit::Commit(block)),
+            LeaderStatus::Skip(skip) => Some(DecidedCommit::Skip(skip)),
+            LeaderStatus::Undecided(_) => None,
         }
     }
 
@@ -58,35 +70,7 @@ impl LeaderStatus {
             Self::Undecided(_) => false,
         }
     }
-
-    pub fn as_decided_author_round(&self) -> AuthorRound {
-        match self {
-            Self::Commit(block) => block.author_round(),
-            Self::Skip(leader) => *leader,
-            Self::Undecided(..) => panic!("Decided block is either Commit or Skip"),
-        }
-    }
-
-    pub fn into_committed_block(self) -> Option<Arc<Block>> {
-        match self {
-            Self::Commit(block) => Some(block),
-            Self::Skip(..) => None,
-            Self::Undecided(..) => panic!("Decided block is either Commit or Skip"),
-        }
-    }
 }
-//
-// impl PartialOrd for LeaderStatus {
-//     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-//         Some(self.cmp(other))
-//     }
-// }
-//
-// impl Ord for LeaderStatus {
-//     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-//         (self.round(), self.authority()).cmp(&(other.round(), other.authority()))
-//     }
-// }
 
 impl fmt::Display for LeaderStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

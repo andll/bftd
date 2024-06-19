@@ -7,7 +7,7 @@ use crate::committee::Committee;
 use crate::consensus::base_committer::BaseCommitterOptions;
 use std::{collections::VecDeque, sync::Arc};
 
-use super::{base_committer::BaseCommitter, Decision, LeaderStatus, DEFAULT_WAVE_LENGTH};
+use super::{base_committer::BaseCommitter, DecidedCommit, LeaderStatus, DEFAULT_WAVE_LENGTH};
 
 /// A universal committer uses a collection of committers to commit a sequence of leaders.
 /// It can be configured to use a combination of different commit strategies, including
@@ -26,7 +26,7 @@ impl<B: BlockStore> UniversalCommitter<B> {
         &self,
         last_decided: AuthorRound,
         highest_known_round: Round,
-    ) -> Vec<LeaderStatus> {
+    ) -> Vec<DecidedCommit> {
         // Try to decide as many leaders as possible, starting with the highest round.
         let mut leaders = VecDeque::new();
         // try to commit a leader up to the highest_known_round - 2. There is no reason to try and
@@ -50,16 +50,16 @@ impl<B: BlockStore> UniversalCommitter<B> {
                 log::debug!("Trying to decide {leader} with {committer}",);
 
                 // Try to directly decide the leader.
-                let mut status = committer.try_direct_decide(leader);
+                let status = committer.try_direct_decide(leader);
                 log::debug!("Outcome of direct rule: {status}");
 
                 // If we can't directly decide the leader, try to indirectly decide it.
                 if status.is_decided() {
-                    leaders.push_front((status.clone(), Decision::Direct));
+                    leaders.push_front(status);
                 } else {
-                    status = committer.try_indirect_decide(leader, leaders.iter().map(|(x, _)| x));
-                    leaders.push_front((status.clone(), Decision::Indirect));
+                    let status = committer.try_indirect_decide(leader, leaders.iter());
                     log::debug!("Outcome of indirect rule: {status}");
+                    leaders.push_front(status);
                 }
             }
         }
@@ -68,16 +68,9 @@ impl<B: BlockStore> UniversalCommitter<B> {
         leaders
             .into_iter()
             // Filter out all the genesis.
-            .filter(|(x, _)| x.round() > Round::ZERO)
+            .filter(|s| s.round() > Round::ZERO)
             // Stop the sequence upon encountering an undecided leader.
-            .take_while(|(x, _)| x.is_decided())
-            // We want to report metrics at this point to ensure that the decisions are reported only once
-            // hence we increase our accuracy
-            .inspect(|(x, _direct_decided)| {
-                // self.update_metrics(x, *direct_decided);
-                log::debug!("Decided {x}");
-            })
-            .map(|(x, _)| x)
+            .map_while(LeaderStatus::into_decided)
             .collect()
     }
 
@@ -91,25 +84,6 @@ impl<B: BlockStore> UniversalCommitter<B> {
             .map(|l| l.author)
             .collect()
     }
-
-    // /// Update metrics.
-    // fn update_metrics(&self, leader: &LeaderStatus, decision: Decision) {
-    //     let authority = leader.authority().to_string();
-    //     let direct_or_indirect = if decision == Decision::Direct {
-    //         "direct"
-    //     } else {
-    //         "indirect"
-    //     };
-    //     let status = match leader {
-    //         LeaderStatus::Commit(..) => format!("{direct_or_indirect}-commit"),
-    //         LeaderStatus::Skip(..) => format!("{direct_or_indirect}-skip"),
-    //         LeaderStatus::Undecided(..) => return,
-    //     };
-    //     self.metrics
-    //         .committed_leaders_total
-    //         .with_label_values(&[&authority, &status])
-    //         .inc();
-    // }
 }
 
 /// A builder for a universal committer. By default, the builder creates a single base committer,
