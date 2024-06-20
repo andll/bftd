@@ -9,7 +9,7 @@ pub struct Block {
     reference: BlockReference,
     signature: BlockSignature,
     chain_id: ChainId,
-    time_ns: u64,
+    time_ns: u64, // todo verify
     parents: Vec<BlockReference>,
     payload_offset: usize,
     data: Bytes,
