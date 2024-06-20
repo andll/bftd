@@ -19,6 +19,7 @@ mod consensus;
 mod core;
 mod crypto;
 mod log;
+mod mempool;
 mod network;
 mod rpc;
 mod syncer;

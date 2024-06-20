@@ -676,6 +676,8 @@ impl TestConnectionPool {
             })
             .collect();
 
+        use futures::future::FutureExt;
+
         let pool_futures: Vec<_> = priv_keys
             .into_iter()
             .zip(peers.iter())

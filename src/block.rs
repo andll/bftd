@@ -43,6 +43,10 @@ const BLOCK_HASH_LENGTH: usize = 32;
 const CHAIN_ID_LENGTH: usize = 32;
 pub const MAX_PARENTS: usize = 1024;
 
+pub const MAX_BLOCK_PAYLOAD: usize = 1024 * 1024;
+pub const MAX_BLOCK_SIZE: usize =
+    Block::PARENTS_OFFSET + BlockReference::SIZE * MAX_PARENTS + MAX_BLOCK_PAYLOAD;
+
 #[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq)]
 pub struct BlockSignature(pub [u8; SIGNATURE_LENGTH]);
 #[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize)]
@@ -117,7 +121,8 @@ impl Block {
         signer: &impl Signer,
         hasher: &impl Hasher,
     ) -> Self {
-        assert!(parents.len() < MAX_PARENTS);
+        assert!(parents.len() <= MAX_PARENTS);
+        assert!(payload.len() <= MAX_BLOCK_PAYLOAD);
         let parents_len = BlockReference::SIZE * parents.len();
         let payload_offset = Self::PARENTS_OFFSET + parents_len;
         let mut data = BytesMut::with_capacity(payload.len() + payload_offset);
@@ -224,7 +229,7 @@ impl Block {
                 .unwrap(),
         ) as usize;
         ensure!(
-            parents_count < MAX_PARENTS,
+            parents_count <= MAX_PARENTS,
             "Block has too many parents {parents_count}"
         );
         ensure!(
