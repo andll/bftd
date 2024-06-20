@@ -68,6 +68,10 @@ impl ThresholdClockAggregator {
     pub fn get_round(&self) -> Round {
         self.round
     }
+
+    pub fn validator_set(&self) -> &ValidatorSet {
+        &self.aggregator.votes
+    }
 }
 
 pub struct QuorumThreshold;
@@ -166,6 +170,16 @@ impl ValidatorSet {
 
         let bit = 1 << bit_index;
         (self.0[byte_index] & bit) != 0
+    }
+
+    pub fn present(&self) -> impl Iterator<Item = ValidatorIndex> + '_ {
+        self.0.iter().enumerate().flat_map(|(byte_index, byte)| {
+            (0..ELEMENT_BITS)
+                .filter(move |bit_index| (byte & (1 << bit_index)) != 0)
+                .map(move |bit_index| {
+                    ValidatorIndex((byte_index * ELEMENT_BITS + bit_index) as u64)
+                })
+        })
     }
 
     #[inline]

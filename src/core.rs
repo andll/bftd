@@ -1,10 +1,10 @@
 use crate::block::{Block, BlockReference, ChainId, Round, ValidatorIndex};
-use crate::block_manager::{BlockManager, BlockStore};
+use crate::block_manager::{AddBlockResult, BlockManager, BlockStore};
 use crate::committee::Committee;
 use crate::crypto::{Blake2Hasher, Signer};
 use crate::threshold_clock::ThresholdClockAggregator;
 use bytes::Bytes;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
 
 pub struct Core<S, B> {
@@ -45,10 +45,10 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
     }
 
     /// returns new missing blocks
-    pub fn add_block(&mut self, block: Arc<Block>) -> Vec<BlockReference> {
+    pub fn add_block(&mut self, block: Arc<Block>) -> AddBlockResult {
         let result = self.block_manager.add_block(block);
         self.blocks_inserted(&result.added);
-        result.new_missing
+        result
     }
 
     pub fn next_proposal_round(&self) -> Option<Round> {
@@ -58,6 +58,18 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
         } else {
             None
         }
+    }
+
+    pub fn missing_validators_for_proposal(&self) -> Vec<ValidatorIndex> {
+        let mut s = BTreeSet::from_iter(self.committee.enumerate_indexes());
+        for v in self.proposer_clock.validator_set().present() {
+            s.remove(&v);
+        }
+        s.into_iter().collect()
+    }
+
+    pub fn last_proposed_round(&self) -> Round {
+        self.last_proposed_round
     }
 
     pub fn try_make_proposal(

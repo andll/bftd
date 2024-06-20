@@ -218,7 +218,8 @@ impl RpcTask {
                 }
             };
             let Some(connection) = connection else {
-                panic!("Network shut down while RPC was running");
+                tracing::warn!("Network shut down while RPC was running");
+                break;
             };
             let peer_task_data = if let Some((stop, previous_task)) =
                 peer_tasks.remove(&connection.peer.public_key)
@@ -242,6 +243,7 @@ impl RpcTask {
                 continue;
             };
             let (stop_send, stop_rcv) = oneshot::channel();
+            tracing::debug!("Peer {} connected", connection.peer.index);
 
             let peer_public_key = connection.peer.public_key.clone();
             let peer_task = PeerTask {
@@ -283,6 +285,7 @@ impl PeerTask {
             }
             Ok(proceed) => proceed,
         };
+        tracing::debug!("Peer {} disconnected", self.connection.peer.index);
         if proceed {
             Some(self.peer_task_data)
         } else {
@@ -496,15 +499,16 @@ impl From<mpsc::error::SendError<PeerRpcTaskCommand>> for RpcError {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::log::enable_test_logging;
     use crate::network::TestConnectionPool;
     use tokio::sync::mpsc::Receiver;
 
     #[tokio::test]
     pub async fn rpc_test() {
-        env_logger::try_init().ok();
+        enable_test_logging();
         let test_pool = TestConnectionPool::new(2, 8180).await;
 
-        let ([pool1, pool2], [kpb1, kpb2]) = test_pool.into_parts();
+        let ([pool1, pool2], [kpb1, kpb2], runtimes) = test_pool.into_parts();
         let rpc1 = NetworkRpc::start(
             pool1,
             [(kpb2.clone(), TestRpcRouter::new())].into_iter().collect(),
@@ -536,6 +540,8 @@ mod test {
         let bytes = r.recv().await.unwrap().unwrap().0;
         assert_eq!(bytes.as_ref(), &[5, 6]);
         assert!(r.recv().await.is_none());
+
+        TestConnectionPool::drop_runtimes(runtimes).await;
     }
 
     struct TestRpcRouter;

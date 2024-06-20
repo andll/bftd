@@ -18,6 +18,7 @@ mod committee;
 mod consensus;
 mod core;
 mod crypto;
+mod log;
 mod network;
 mod rpc;
 mod syncer;

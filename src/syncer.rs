@@ -115,23 +115,31 @@ impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
         let mut proposal_deadline: Pin<Box<dyn Future<Output = ()> + Send>> =
             futures::future::pending().boxed();
         let mut proposal_deadline_set = false;
+        let mut waiting_leaders: Option<Vec<ValidatorIndex>> = None;
         self.rpc.wait_connected(Duration::from_secs(2)).await;
         loop {
             select! {
                 block = self.blocks_receiver.recv() => {
                     let Some(block) = block else {return;};
-                    tracing::debug!("Received block {}", block.reference());
+                    let reference = *block.reference();
                     // todo need more block verification
-                    let _new_missing = self.core.add_block(block);
+                    let add_block_result = self.core.add_block(block);
+                    let added_this = add_block_result.added.iter().any(|b|*b.reference() == reference);
+                    tracing::debug!("Received block {reference} {}", if added_this {
+                        let added_blocks: Vec<_> = add_block_result.added.iter().map(|b|b.reference()).collect();
+                        format!("(block accepted, added {added_blocks:?})")
+                    } else {
+                        format!("(missing parents new {:?}, old {:?})", add_block_result.new_missing, add_block_result.previously_missing)
+                    });
                     // todo handle missing blocks
                     if let Some(next_proposal_round) = self.core.next_proposal_round() {
                         let check_round = next_proposal_round.previous();
                         let mut ready = true;
                         let leaders = self.committer.get_leaders(check_round);
-                        for leader in leaders {
+                        for leader in &leaders {
                             // todo - exists method instead of get
-                            if self.block_store.get_blocks_at_author_round(leader, check_round).is_empty() {
-                                if !self.rpc.is_connected(self.committee().network_key(leader)) {
+                            if self.block_store.get_blocks_at_author_round(*leader, check_round).is_empty() {
+                                if !self.rpc.is_connected(self.committee().network_key(*leader)) {
                                     tracing::debug!("Missing leader {}{}, not waiting because there is no connection", leader, check_round);
                                     continue;
                                 }
@@ -144,12 +152,18 @@ impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
                             self.make_proposal();
                             proposal_deadline = futures::future::pending().boxed();
                             proposal_deadline_set = false;
+                            waiting_leaders = None;
                         } else {
                             if !proposal_deadline_set {
                                 proposal_deadline = tokio::time::sleep_until(Instant::now().add(Duration::from_secs(1))).boxed();
                                 proposal_deadline_set = true;
+                                waiting_leaders = Some(leaders);
                             }
                         }
+                    } else {
+                        let missing = self.core.missing_validators_for_proposal();
+                        let round = self.core.last_proposed_round();
+                        tracing::debug!("Still waiting for validators {missing:?} at round {round}");
                     }
                     let commits = self.committer.try_commit(self.last_decided, *self.last_proposed_round_sender.borrow());
                     for c in commits {
@@ -170,10 +184,13 @@ impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
                     }
                 }
                 _ = &mut proposal_deadline => {
-                    tracing::debug!("Leader timeout at round {}", self.core.next_proposal_round().unwrap_or_default());
+                    let waiting_round = self.core.next_proposal_round().unwrap_or_default();
+                    let timeouts: Vec<_> = waiting_leaders.as_ref().unwrap().iter().map(|l|AuthorRound::new(*l, waiting_round)).collect();
+                    tracing::debug!("Leader timeout {timeouts:?}");
                     self.make_proposal();
                     proposal_deadline = futures::future::pending().boxed();
                     proposal_deadline_set = false;
+                    waiting_leaders = None;
                 }
                 _ = &mut self.stop => {
                     break;
@@ -218,7 +235,12 @@ impl<B: BlockStore> PeerRouter<B> {
                 // todo track task
                 // todo limit one subscription per peer
                 let (sender, receiver) = mpsc::channel(10);
-                tokio::spawn(Self::stream_task(self.inner.clone(), sender, round));
+                tokio::spawn(Self::stream_task(
+                    self.inner.clone(),
+                    sender,
+                    round,
+                    self.peer_index,
+                ));
                 Ok(receiver)
             }
         }
@@ -240,11 +262,13 @@ impl<B: BlockStore> PeerRouter<B> {
         inner: Arc<SyncerInner<B>>,
         sender: mpsc::Sender<NetworkResponse>,
         mut last_sent: Round,
+        peer_index: ValidatorIndex,
     ) {
         let mut round_receiver = inner.last_proposed_round_receiver.clone();
         // todo - check initial condition is ok
-        while let Ok(()) = round_receiver.changed().await {
-            let round = *round_receiver.borrow();
+        tracing::debug!("Starting subscription from {peer_index}");
+        loop {
+            let round = *round_receiver.borrow_and_update();
             while round > last_sent {
                 // todo batch read range w/ chunks
                 last_sent = last_sent.next();
@@ -252,11 +276,16 @@ impl<B: BlockStore> PeerRouter<B> {
                 else {
                     continue; // todo - more efficient, iterating through each round right now
                 };
+                tracing::debug!("Sending {} to {peer_index}", own_block.reference());
                 let response = StreamRpcResponse::Block(own_block.data().clone());
                 let response = bincode::serialize(&response).expect("Serialization failed");
                 if sender.send(NetworkResponse(response.into())).await.is_err() {
+                    tracing::warn!("Subscription from {peer_index} ended");
                     return;
                 }
+            }
+            if round_receiver.changed().await.is_err() {
+                break;
             }
         }
     }

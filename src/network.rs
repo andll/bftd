@@ -1,15 +1,15 @@
 use crate::block::ValidatorIndex;
 use bytes::Bytes;
 use futures::future::join_all;
-use futures::join;
+use futures::{join};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use snow::{HandshakeState, TransportState};
 use std::collections::HashMap;
-use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{fmt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpSocket};
@@ -165,6 +165,7 @@ struct ConnectionTask {
 
 impl PeerTask {
     pub async fn run(mut self) {
+        let mut replaced: Option<NoiseConnection> = None;
         loop {
             let initial_delay = if self.active {
                 Duration::ZERO
@@ -177,19 +178,24 @@ impl PeerTask {
                 Duration::from_secs(1),
                 self.pk.clone(),
             ));
-            let was_incoming;
-            let noise_connection = select! {
-                incoming = self.incoming.recv() => {
-                    was_incoming = "incoming";
-                    if let Some(incoming) = incoming {
-                        incoming
-                    } else {
-                        return;
+            let source;
+            let noise_connection = if let Some(replaced) = replaced.take() {
+                source = "replaced";
+                replaced
+            } else {
+                select! {
+                    incoming = self.incoming.recv() => {
+                        source = "incoming";
+                        if let Some(incoming) = incoming {
+                            incoming
+                        } else {
+                            return;
+                        }
+                    },
+                    outgoing = establish_connection_task => {
+                        source = "outgoing";
+                        outgoing.expect("establish_connection_task should not abort")
                     }
-                },
-                outgoing = establish_connection_task => {
-                    was_incoming = "outgoing";
-                    outgoing.expect("establish_connection_task should not abort")
                 }
             };
             let (connection, task) = self.start_connection(noise_connection);
@@ -199,12 +205,24 @@ impl PeerTask {
                 return;
             }
             tracing::debug!(
-                "Connection to {} established({})",
+                "Connection to {}(pub key {}) established({})",
+                self.peer.index,
                 self.peer.public_key,
-                was_incoming
+                source
             );
-            task.await.ok();
-            tracing::debug!("Connection to {} dropped", self.peer.public_key);
+            select! {
+                task = task => {
+                    tracing::debug!("Connection to {} dropped", self.peer.index);
+                    task.ok();
+                },
+                incoming = self.incoming.recv() => {
+                    let Some(incoming) = incoming else {
+                        return;
+                    };
+                    tracing::debug!("Connection to {} is being replaced by concurrent incoming connection", self.peer.index);
+                    replaced = Some(incoming);
+                }
+            }
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
@@ -233,6 +251,10 @@ impl PeerTask {
         pk: NoisePrivateKey,
     ) -> NoiseConnection {
         tokio::time::sleep(initial_delay).await;
+        tracing::debug!(
+            "Initiating connection to {} after initial delay {initial_delay:?}",
+            peer.index
+        );
         loop {
             match Self::connect_and_handshake(&peer, &pk).await {
                 Ok(connection) => return connection,
@@ -291,11 +313,13 @@ impl ConnectionTask {
         peer: PeerInfo,
     ) {
         while let Some(message) = receiver.recv().await {
+            tracing::debug!("Sending {} bytes to {}", message.data.len(), peer.index);
             if let Err(err) = writer.write_frame(&message.data).await {
                 tracing::debug!("Failed to write to {}: {}", peer.public_key, err);
                 return;
             }
         }
+        tracing::debug!("Write task to {} complete (receiver closed)", peer.index);
     }
 
     async fn read_task(
@@ -306,9 +330,11 @@ impl ConnectionTask {
         loop {
             match reader.read_frame_encrypted().await {
                 Ok(message) => {
+                    tracing::debug!("Received {} bytes from {}", message.len(), peer.index);
                     let data = Bytes::copy_from_slice(message);
                     let message = NetworkMessage { data };
                     if sender.send(message).await.is_err() {
+                        tracing::debug!("Read task to {} complete (sender closed)", peer.index);
                         return;
                     }
                 }
@@ -361,7 +387,9 @@ impl Acceptor {
 
 impl Handshake {
     pub async fn run_incoming(self) -> NetworkResult<(FrameReader, FrameWriter, NoisePublicKey)> {
-        self.socket.set_nodelay(true)?;
+        self.socket
+            .set_nodelay(true)
+            .expect("Failed to set nodelay");
         let mut noise = self
             .noise_builder()
             .build_initiator()
@@ -607,6 +635,7 @@ impl NetworkMessage {
 pub struct TestConnectionPool {
     pub pools: Vec<ConnectionPool>,
     pub pub_keys: Vec<NoisePublicKey>,
+    pub runtimes: Vec<tokio::runtime::Runtime>,
 }
 
 #[cfg(test)]
@@ -631,32 +660,76 @@ impl TestConnectionPool {
             })
             .collect();
 
+        let runtimes: Vec<_> = pub_keys
+            .iter()
+            .enumerate()
+            .map(|(i, _)| {
+                let i = ValidatorIndex(i as u64);
+                tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .thread_name(format!("[{i}]"))
+                    .build()
+                    .unwrap()
+            })
+            .collect();
+
         let pool_futures: Vec<_> = priv_keys
             .into_iter()
             .zip(peers.iter())
+            .zip(runtimes.iter())
             .enumerate()
-            .map(|(i, (pk, peer))| ConnectionPool::start(peer.address, pk.into(), peers.clone(), i))
+            .map(|(i, ((pk, peer), runtime))| {
+                runtime.spawn(
+                    ConnectionPool::start(peer.address, pk.into(), peers.clone(), i)
+                        .map(|r| r.unwrap()),
+                )
+            })
             .collect();
 
         let pools = futures::future::try_join_all(pool_futures).await.unwrap();
 
-        TestConnectionPool { pools, pub_keys }
+        TestConnectionPool {
+            pools,
+            pub_keys,
+            runtimes,
+        }
     }
 
-    pub fn into_parts<const N: usize>(self) -> ([ConnectionPool; N], [NoisePublicKey; N]) {
+    pub fn into_parts<const N: usize>(
+        self,
+    ) -> ([ConnectionPool; N], [NoisePublicKey; N], Vec<tokio::runtime::Runtime>) {
         let Ok(pools) = self.pools.try_into() else {
             panic!()
         };
         let Ok(pub_keys) = self.pub_keys.try_into() else {
             panic!()
         };
-        (pools, pub_keys)
+        (pools, pub_keys, self.runtimes)
+    }
+
+    pub fn take_pools(&mut self) -> Vec<ConnectionPool> {
+        let mut v = Vec::new();
+        std::mem::swap(&mut v, &mut self.pools);
+        v
+    }
+
+    pub async fn drop_wait(self) {
+        Self::drop_runtimes(self.runtimes).await;
+    }
+
+    pub async fn drop_runtimes(r: Vec<tokio::runtime::Runtime>) {
+        tokio::runtime::Handle::current()
+            .spawn_blocking(move || drop(r))
+            .await
+            .unwrap();
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::log::enable_test_logging;
+    use std::collections::HashSet;
     use tokio::time::timeout;
 
     #[tokio::test]
@@ -664,7 +737,7 @@ mod test {
         env_logger::try_init().ok();
         let test_pool = TestConnectionPool::new(2, 8080).await;
 
-        let ([mut pool1, mut pool2], [kpb1, kpb2]) = test_pool.into_parts();
+        let ([mut pool1, mut pool2], [kpb1, kpb2], runtimes) = test_pool.into_parts();
 
         let c1 = timeout(Duration::from_secs(5), pool1.connections.recv())
             .await
@@ -688,5 +761,69 @@ mod test {
         assert_eq!(message.data.as_ref(), &[1, 2, 3]);
         pool1.shutdown().await;
         pool2.shutdown().await;
+        TestConnectionPool::drop_runtimes(runtimes).await;
+    }
+
+    #[tokio::test]
+    pub async fn network_stress_test() {
+        enable_test_logging();
+        let size = 20;
+        let mut test_pool = TestConnectionPool::new(size, 8020).await;
+
+        let mut tasks = vec![];
+        let (s, mut r) = mpsc::channel(10);
+        let mut expect_messages = HashSet::new();
+        for (a, mut pool) in test_pool.take_pools().into_iter().enumerate() {
+            let a = ValidatorIndex(a as u64);
+            let s = s.clone();
+            for b in 0..size {
+                let b = ValidatorIndex(b as u64);
+                if a != b {
+                    expect_messages.insert((a, b));
+                }
+            }
+            tasks.push(tokio::spawn(async move {
+                while let Some(mut connection) = pool.connections.recv().await {
+                    println!("{a} connected to {}", connection.peer.index);
+                    let s = s.clone();
+                    tokio::spawn(async move {
+                        let data = vec![0, 1, 2].into();
+                        connection.sender.send(NetworkMessage { data }).await.ok();
+                        let d = connection.receiver.recv().await;
+                        match d {
+                            None => {
+                                println!(
+                                    "{a} did not receive anything from {}",
+                                    connection.peer.index
+                                );
+                            }
+                            Some(d) => {
+                                println!("{a} received message from {}", connection.peer.index);
+                                s.send((a, connection.peer.index)).await.unwrap();
+                            }
+                        }
+                        let () = futures::future::pending().await;
+                    });
+                }
+            }));
+        }
+        println!("Expecting {} messages", expect_messages.len());
+        while let Some((a, b)) = r.recv().await {
+            expect_messages.remove(&(a, b));
+            if expect_messages.is_empty() {
+                break;
+            }
+            if expect_messages.len() < 10 {
+                println!(
+                    "Still waiting for {} messages: {expect_messages:?}",
+                    expect_messages.len()
+                );
+            }
+        }
+        for task in tasks {
+            task.abort();
+            task.await.ok();
+        }
+        test_pool.drop_wait().await;
     }
 }

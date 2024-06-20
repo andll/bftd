@@ -27,6 +27,7 @@ pub trait BlockStore: Send + Sync + 'static {
 pub struct AddBlockResult {
     pub added: Vec<Arc<Block>>,
     pub new_missing: Vec<BlockReference>,
+    pub previously_missing: Vec<BlockReference>,
 }
 
 impl<S: BlockStore> BlockManager<S> {
@@ -40,6 +41,7 @@ impl<S: BlockStore> BlockManager<S> {
     pub fn add_block(&mut self, block: Arc<Block>) -> AddBlockResult {
         let mut added = Vec::new();
         let mut new_missing = Vec::new();
+        let mut previously_missing = Vec::new();
         let mut blocks = HashMap::new();
         blocks.insert(*block.reference(), block);
         while let Some(block) = blocks.keys().next().copied() {
@@ -66,13 +68,19 @@ impl<S: BlockStore> BlockManager<S> {
                     let entry = self.missing_inverse.entry(parent);
                     if matches!(entry, Entry::Vacant(_)) {
                         new_missing.push(parent);
+                    } else {
+                        previously_missing.push(parent);
                     }
                     let map = entry.or_default();
                     map.insert(*block.reference(), block.clone());
                 }
             }
         }
-        AddBlockResult { added, new_missing }
+        AddBlockResult {
+            added,
+            new_missing,
+            previously_missing,
+        }
     }
 }
 

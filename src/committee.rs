@@ -93,6 +93,13 @@ impl Committee {
             .map(|(i, vi)| (ValidatorIndex(i as u64), vi))
     }
 
+    pub fn enumerate_indexes(&self) -> impl Iterator<Item = ValidatorIndex> + '_ {
+        self.validators
+            .iter()
+            .enumerate()
+            .map(|(i, _)| ValidatorIndex(i as u64))
+    }
+
     pub fn genesis_blocks(&self, chain_id: ChainId) -> Vec<Block> {
         self.enumerate_validators()
             .map(|(i, _)| Block::genesis(chain_id, i))

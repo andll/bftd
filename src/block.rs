@@ -15,16 +15,14 @@ pub struct Block {
     data: Bytes,
 }
 
-#[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize)]
 pub struct BlockReference {
     pub round: Round,
     pub author: ValidatorIndex,
     pub hash: BlockHash,
 }
 
-#[derive(
-    Default, Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize,
-)]
+#[derive(Default, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize)]
 pub struct ValidatorIndex(pub u64);
 #[derive(
     Default, Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize,
@@ -34,9 +32,7 @@ pub struct Round(pub u64);
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ChainId(pub [u8; CHAIN_ID_LENGTH]);
 
-#[derive(
-    Default, Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize,
-)]
+#[derive(Default, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize)]
 pub struct AuthorRound {
     pub author: ValidatorIndex,
     pub round: Round,
@@ -360,6 +356,12 @@ impl AuthorRound {
     }
 }
 
+impl PartialEq for Block {
+    fn eq(&self, other: &Self) -> bool {
+        self.reference == other.reference
+    }
+}
+
 impl fmt::Display for ValidatorIndex {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.0 > 26 {
@@ -368,6 +370,12 @@ impl fmt::Display for ValidatorIndex {
             let l = ('A' as u8 + self.0 as u8) as char;
             write!(f, "{l}")
         }
+    }
+}
+
+impl fmt::Debug for ValidatorIndex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
     }
 }
 
@@ -383,6 +391,12 @@ impl fmt::Display for AuthorRound {
     }
 }
 
+impl fmt::Debug for AuthorRound {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
 impl fmt::Display for BlockHash {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", hex::encode(&self.0[..4]))
@@ -392,6 +406,12 @@ impl fmt::Display for BlockHash {
 impl fmt::Display for BlockReference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}@{}", self.author_round(), self.hash)
+    }
+}
+
+impl fmt::Debug for BlockReference {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
     }
 }
 
