@@ -4,12 +4,12 @@ use crate::committee::{Committee, Stake, ValidatorInfo};
 use crate::core::Core;
 use crate::crypto::Ed25519Signer;
 use crate::network::{ConnectionPool, NoisePublicKey, PeerInfo};
-use crate::syncer::Syncer;
+use crate::syncer::{Clock, Syncer};
 use futures::future::join_all;
 use rand::rngs::ThreadRng;
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tracing_subscriber::EnvFilter;
 
 mod block;
@@ -60,6 +60,7 @@ fn main() {
     let committee = Arc::new(Committee::new(validators));
     let mut syncers = Vec::with_capacity(num_validators);
     let mut validator_runtimes = vec![];
+    let clock = Instant::now();
     for (i, (noise_private_key, protocol_private_key)) in noise_private_keys
         .into_iter()
         .zip(protocol_private_keys.into_iter())
@@ -89,7 +90,7 @@ fn main() {
         );
         {
             let _enter = runtime.enter();
-            let syncer = Syncer::start(core, block_store, pool);
+            let syncer = Syncer::start(core, block_store, pool, clock);
             syncers.push(syncer);
         }
         validator_runtimes.push(runtime);
@@ -102,4 +103,10 @@ fn main() {
         .unwrap();
     runtime.block_on(join_all(syncers.into_iter().map(Syncer::stop)));
     println!("OK");
+}
+
+impl Clock for Instant {
+    fn time_ns(&self) -> u64 {
+        self.elapsed().as_nanos() as u64
+    }
 }

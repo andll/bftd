@@ -94,6 +94,10 @@ impl Block {
         self.reference.author_round()
     }
 
+    pub fn time_ns(&self) -> u64 {
+        self.time_ns
+    }
+
     pub fn author_from_bytes(data: &[u8]) -> anyhow::Result<ValidatorIndex> {
         ensure!(data.len() >= Self::PARENTS_OFFSET, "Block too small");
         Ok(ValidatorIndex(u64::from_le_bytes(

@@ -26,7 +26,7 @@ pub struct Syncer {
     stop: oneshot::Sender<()>,
 }
 
-struct SyncerTask<S, B> {
+struct SyncerTask<S, B, C> {
     core: Core<S, B>,
     committer: UniversalCommitter<B>,
     block_store: B,
@@ -35,6 +35,7 @@ struct SyncerTask<S, B> {
     blocks_receiver: mpsc::Receiver<Arc<Block>>,
     last_decided: AuthorRound,
     stop: oneshot::Receiver<()>,
+    clock: C,
 }
 
 struct SyncerInner<B> {
@@ -45,11 +46,16 @@ struct SyncerInner<B> {
     blocks_sender: mpsc::Sender<Arc<Block>>,
 }
 
+pub trait Clock: Send + 'static {
+    fn time_ns(&self) -> u64;
+}
+
 impl Syncer {
-    pub fn start<S: Signer, B: BlockStore + Clone>(
+    pub fn start<S: Signer, B: BlockStore + Clone, C: Clock + Clone>(
         core: Core<S, B>,
         block_store: B,
         pool: ConnectionPool,
+        clock: C,
     ) -> Self {
         let committee = core.committee().clone();
         let committer = UniversalCommitterBuilder::new(committee.clone(), block_store.clone())
@@ -74,6 +80,7 @@ impl Syncer {
                 let peer_router = PeerRouter {
                     inner: inner.clone(),
                     peer_index: index,
+                    clock: clock.clone(),
                 };
                 (key, Box::new(peer_router) as Box<dyn NetworkRpcRouter>)
             })
@@ -89,6 +96,7 @@ impl Syncer {
             blocks_receiver,
             last_decided: AuthorRound::default(), // todo load
             stop: stop_receiver,
+            clock,
         };
         let handle = tokio::spawn(syncer.run());
         Syncer {
@@ -103,7 +111,7 @@ impl Syncer {
     }
 }
 
-impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
+impl<S: Signer, B: BlockStore + Clone, C: Clock> SyncerTask<S, B, C> {
     pub async fn run(mut self) {
         for block in self.core.committee().genesis_blocks(ChainId::CHAIN_ID_TEST) {
             let block = Arc::new(block);
@@ -123,16 +131,17 @@ impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
                     let Some(block) = block else {return;};
                     let reference = *block.reference();
                     // todo need more block verification
+                    let age_ms = self.clock.time_ns().saturating_sub(block.time_ns()) / 1000 / 1000;
                     let add_block_result = self.core.add_block(block);
                     let added_this = add_block_result.added.iter().any(|b|*b.reference() == reference);
-                    tracing::debug!("Received block {reference} {}", if added_this {
+                    tracing::debug!("Received {reference} {} age {age_ms} ms", if added_this {
                         let added_blocks: Vec<_> = add_block_result.added.iter().map(|b|b.reference()).collect();
                         format!("(block accepted, added {added_blocks:?})")
                     } else {
                         format!("(missing parents new {:?}, old {:?})", add_block_result.new_missing, add_block_result.previously_missing)
                     });
                     // todo handle missing blocks
-                    if let Some(next_proposal_round) = self.core.next_proposal_round() {
+                    if let Some(next_proposal_round) = self.core.vector_clock_round() {
                         let check_round = next_proposal_round.previous();
                         let mut ready = true;
                         let leaders = self.committer.get_leaders(check_round);
@@ -184,7 +193,7 @@ impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
                     }
                 }
                 _ = &mut proposal_deadline => {
-                    let waiting_round = self.core.next_proposal_round().unwrap_or_default();
+                    let waiting_round = self.core.vector_clock_round().unwrap_or_default().previous();
                     let timeouts: Vec<_> = waiting_leaders.as_ref().unwrap().iter().map(|l|AuthorRound::new(*l, waiting_round)).collect();
                     tracing::warn!("Leader timeout {timeouts:?}");
                     self.make_proposal();
@@ -202,16 +211,31 @@ impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
     }
 
     fn make_proposal(&mut self) -> bool {
-        let proposal = self.core.try_make_proposal(&mut ());
-        if let Some(proposal) = proposal {
-            tracing::debug!("Generated proposal {}", proposal);
-            self.last_proposed_round_sender
-                .send(proposal.reference().round)
-                .ok();
-            true
-        } else {
-            false
+        let round = self.core.vector_clock_round();
+        let Some(round) = round else {
+            return false;
+        };
+        let previous = round.previous();
+        if previous > self.core.last_proposed_round() {
+            if self
+                .committer
+                .is_leader(previous, self.core.validator_index())
+            {
+                self.make_proposal_for_round(previous);
+            }
         }
+        self.make_proposal_for_round(round);
+        true
+    }
+
+    fn make_proposal_for_round(&mut self, round: Round) {
+        let proposal = self
+            .core
+            .make_proposal(&mut (), round, self.clock.time_ns());
+        tracing::debug!("Generated proposal {}", proposal);
+        self.last_proposed_round_sender
+            .send(proposal.reference().round)
+            .ok();
     }
 
     fn committee(&self) -> &Arc<Committee> {
@@ -219,12 +243,13 @@ impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
     }
 }
 
-struct PeerRouter<B> {
+struct PeerRouter<B, C> {
     inner: Arc<SyncerInner<B>>,
     peer_index: ValidatorIndex,
+    clock: C,
 }
 
-impl<B: BlockStore> PeerRouter<B> {
+impl<B: BlockStore, C: Clock + Clone> PeerRouter<B, C> {
     fn stream_rpc(
         &mut self,
         req: NetworkRequest,
@@ -240,6 +265,7 @@ impl<B: BlockStore> PeerRouter<B> {
                     sender,
                     round,
                     self.peer_index,
+                    self.clock.clone(),
                 ));
                 Ok(receiver)
             }
@@ -263,6 +289,7 @@ impl<B: BlockStore> PeerRouter<B> {
         sender: mpsc::Sender<NetworkResponse>,
         mut last_sent: Round,
         peer_index: ValidatorIndex,
+        clock: impl Clock,
     ) {
         let mut round_receiver = inner.last_proposed_round_receiver.clone();
         // todo - check initial condition is ok
@@ -276,7 +303,11 @@ impl<B: BlockStore> PeerRouter<B> {
                 else {
                     continue; // todo - more efficient, iterating through each round right now
                 };
-                tracing::debug!("Sending {} to {peer_index}", own_block.reference());
+                let age_ms = clock.time_ns().saturating_sub(own_block.time_ns()) / 1000 / 1000;
+                tracing::debug!(
+                    "Sending {} to {peer_index} age {age_ms} ms",
+                    own_block.reference()
+                );
                 let response = StreamRpcResponse::Block(own_block.data().clone());
                 let response = bincode::serialize(&response).expect("Serialization failed");
                 if sender.send(NetworkResponse(response.into())).await.is_err() {
@@ -323,7 +354,7 @@ impl<B: BlockStore> PeerRouter<B> {
     }
 }
 
-impl<B: BlockStore> NetworkRpcRouter for PeerRouter<B> {
+impl<B: BlockStore, C: Clock + Clone> NetworkRpcRouter for PeerRouter<B, C> {
     fn rpc(&mut self, req: NetworkRequest) -> NetworkResponse {
         self.rpc(req).unwrap() // todo handle error
     }

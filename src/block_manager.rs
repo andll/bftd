@@ -191,18 +191,18 @@ mod tests {
 }
 
 pub type MemoryBlockStore =
-    parking_lot::Mutex<BTreeMap<Round, BTreeMap<(ValidatorIndex, BlockHash), Arc<Block>>>>;
+    parking_lot::RwLock<BTreeMap<Round, BTreeMap<(ValidatorIndex, BlockHash), Arc<Block>>>>;
 
 impl BlockStore for MemoryBlockStore {
     fn put(&self, block: Arc<Block>) {
-        self.lock()
+        self.write()
             .entry(block.round())
             .or_default()
             .insert((block.author(), *block.block_hash()), block);
     }
 
     fn get(&self, key: &BlockReference) -> Option<Arc<Block>> {
-        self.lock()
+        self.read()
             .get(&key.round)?
             .get(&(key.author, key.hash))
             .cloned()
@@ -210,7 +210,7 @@ impl BlockStore for MemoryBlockStore {
 
     fn get_own(&self, validator: ValidatorIndex, round: Round) -> Option<Arc<Block>> {
         Some(
-            self.lock()
+            self.read()
                 .get(&round)?
                 .range((validator, BlockHash::MIN)..(validator, BlockHash::MAX))
                 .next()?
@@ -221,7 +221,7 @@ impl BlockStore for MemoryBlockStore {
 
     fn last_known_round(&self, validator: ValidatorIndex) -> Round {
         // todo performance
-        let lock = self.lock();
+        let lock = self.read();
         for (round, map) in lock.iter().rev() {
             if map
                 .range((validator, BlockHash::MIN)..(validator, BlockHash::MAX))
@@ -235,7 +235,7 @@ impl BlockStore for MemoryBlockStore {
     }
 
     fn exists(&self, key: &BlockReference) -> bool {
-        let lock = self.lock();
+        let lock = self.read();
         let m = lock.get(&key.round);
         match m {
             Some(map) => map.contains_key(&(key.author, key.hash)),
@@ -244,7 +244,7 @@ impl BlockStore for MemoryBlockStore {
     }
 
     fn get_blocks_by_round(&self, round: Round) -> Vec<Arc<Block>> {
-        let lock = self.lock();
+        let lock = self.read();
         if let Some(map) = lock.get(&round) {
             // todo - is cloning a good idea here?
             map.values().cloned().collect()
@@ -254,7 +254,7 @@ impl BlockStore for MemoryBlockStore {
     }
 
     fn get_blocks_at_author_round(&self, author: ValidatorIndex, round: Round) -> Vec<Arc<Block>> {
-        let lock = self.lock();
+        let lock = self.read();
         if let Some(map) = lock.get(&round) {
             // todo - is cloning a good idea here?
             map.range((author, BlockHash::MIN)..(author, BlockHash::MAX))
@@ -266,7 +266,7 @@ impl BlockStore for MemoryBlockStore {
     }
 
     fn linked_to_round(&self, block: &Arc<Block>, round: Round) -> Vec<Arc<Block>> {
-        let lock = self.lock();
+        let lock = self.read();
         let mut parents = vec![block.clone()];
         for r in (round.0..block.round().0).rev() {
             let r = Round(r);

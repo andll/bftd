@@ -51,7 +51,7 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
         result
     }
 
-    pub fn next_proposal_round(&self) -> Option<Round> {
+    pub fn vector_clock_round(&self) -> Option<Round> {
         let round = self.proposer_clock.get_round();
         if round > self.last_proposed_round {
             Some(round)
@@ -72,21 +72,21 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
         self.last_proposed_round
     }
 
-    pub fn try_make_proposal(
+    pub fn make_proposal(
         &mut self,
         proposal_maker: &mut impl ProposalMaker,
-    ) -> Option<Arc<Block>> {
-        let round = self.proposer_clock.get_round();
-        if round <= self.last_proposed_round {
-            return None;
-        }
+        round: Round,
+        time_ns: u64,
+    ) -> Arc<Block> {
+        assert!(round <= self.proposer_clock.get_round());
+        assert!(round > self.last_proposed_round);
         let payload = proposal_maker.make_proposal();
         let parents = self.parents_accumulator.take_parents(round);
         let block = Block::new(
             round,
             self.index,
             ChainId::CHAIN_ID_TEST,
-            0, /* time_ns */
+            time_ns,
             &payload,
             parents,
             &self.signer,
@@ -97,7 +97,7 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
         result.assert_added(block.reference());
         self.blocks_inserted(&result.added);
         self.last_proposed_round = round;
-        Some(block)
+        block
     }
 
     fn blocks_inserted(&mut self, blocks: &[Arc<Block>]) {

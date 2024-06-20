@@ -84,6 +84,13 @@ impl<B: BlockStore> UniversalCommitter<B> {
             .map(|l| l.author)
             .collect()
     }
+
+    pub fn is_leader(&self, round: Round, author: ValidatorIndex) -> bool {
+        let ar = AuthorRound::new(author, round);
+        self.committers
+            .iter()
+            .any(|committer| committer.elect_leader(round) == Some(ar))
+    }
 }
 
 /// A builder for a universal committer. By default, the builder creates a single base committer,

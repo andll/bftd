@@ -1,15 +1,15 @@
 use crate::block::ValidatorIndex;
 use bytes::Bytes;
 use futures::future::join_all;
-use futures::{join};
+use futures::join;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use snow::{HandshakeState, TransportState};
 use std::collections::HashMap;
+use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use std::{fmt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpSocket};
@@ -256,7 +256,7 @@ impl PeerTask {
         tracing::debug!(
             "Initiating connection to {} ({})",
             peer.index,
-            if active {"immediate"} else {"delayed"}
+            if active { "immediate" } else { "delayed" }
         );
         loop {
             match Self::connect_and_handshake(&peer, &pk).await {
@@ -700,7 +700,11 @@ impl TestConnectionPool {
 
     pub fn into_parts<const N: usize>(
         self,
-    ) -> ([ConnectionPool; N], [NoisePublicKey; N], Vec<tokio::runtime::Runtime>) {
+    ) -> (
+        [ConnectionPool; N],
+        [NoisePublicKey; N],
+        Vec<tokio::runtime::Runtime>,
+    ) {
         let Ok(pools) = self.pools.try_into() else {
             panic!()
         };
