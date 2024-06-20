@@ -186,7 +186,7 @@ impl<S: Signer, B: BlockStore + Clone> SyncerTask<S, B> {
                 _ = &mut proposal_deadline => {
                     let waiting_round = self.core.next_proposal_round().unwrap_or_default();
                     let timeouts: Vec<_> = waiting_leaders.as_ref().unwrap().iter().map(|l|AuthorRound::new(*l, waiting_round)).collect();
-                    tracing::debug!("Leader timeout {timeouts:?}");
+                    tracing::warn!("Leader timeout {timeouts:?}");
                     self.make_proposal();
                     proposal_deadline = futures::future::pending().boxed();
                     proposal_deadline_set = false;
@@ -280,7 +280,7 @@ impl<B: BlockStore> PeerRouter<B> {
                 let response = StreamRpcResponse::Block(own_block.data().clone());
                 let response = bincode::serialize(&response).expect("Serialization failed");
                 if sender.send(NetworkResponse(response.into())).await.is_err() {
-                    tracing::warn!("Subscription from {peer_index} ended");
+                    tracing::debug!("Subscription from {peer_index} ended");
                     return;
                 }
             }

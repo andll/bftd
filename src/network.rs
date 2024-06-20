@@ -167,35 +167,32 @@ impl PeerTask {
     pub async fn run(mut self) {
         let mut replaced: Option<NoiseConnection> = None;
         loop {
-            let initial_delay = if self.active {
-                Duration::ZERO
-            } else {
-                Duration::from_secs(1)
-            };
-            let establish_connection_task = tokio::spawn(Self::establish_connection(
-                self.peer.clone(),
-                initial_delay,
-                Duration::from_secs(1),
-                self.pk.clone(),
-            ));
             let source;
             let noise_connection = if let Some(replaced) = replaced.take() {
                 source = "replaced";
                 replaced
             } else {
-                select! {
+                let mut establish_connection_task = tokio::spawn(Self::establish_connection(
+                    self.peer.clone(),
+                    self.active,
+                    Duration::from_secs(1),
+                    self.pk.clone(),
+                ));
+                let connection = select! {
                     incoming = self.incoming.recv() => {
                         source = "incoming";
-                        if let Some(incoming) = incoming {
-                            incoming
-                        } else {
-                            return;
-                        }
+                        incoming
                     },
-                    outgoing = establish_connection_task => {
+                    outgoing = &mut establish_connection_task => {
                         source = "outgoing";
-                        outgoing.expect("establish_connection_task should not abort")
+                        Some(outgoing.expect("establish_connection_task should not abort"))
                     }
+                };
+                establish_connection_task.abort();
+                if let Some(connection) = connection {
+                    connection
+                } else {
+                    return;
                 }
             };
             let (connection, task) = self.start_connection(noise_connection);
@@ -214,16 +211,16 @@ impl PeerTask {
                 task = task => {
                     tracing::debug!("Connection to {} dropped", self.peer.index);
                     task.ok();
+                    tokio::time::sleep(Duration::from_secs(1)).await;
                 },
                 incoming = self.incoming.recv() => {
                     let Some(incoming) = incoming else {
                         return;
                     };
-                    tracing::debug!("Connection to {} is being replaced by concurrent incoming connection", self.peer.index);
+                    tracing::warn!("Connection to {} is being replaced by concurrent incoming connection", self.peer.index);
                     replaced = Some(incoming);
                 }
             }
-            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 
@@ -246,14 +243,20 @@ impl PeerTask {
 
     async fn establish_connection(
         peer: PeerInfo,
-        initial_delay: Duration,
+        active: bool,
         interval: Duration,
         pk: NoisePrivateKey,
     ) -> NoiseConnection {
+        let initial_delay = if active {
+            Duration::ZERO
+        } else {
+            Duration::from_secs(3)
+        };
         tokio::time::sleep(initial_delay).await;
         tracing::debug!(
-            "Initiating connection to {} after initial delay {initial_delay:?}",
-            peer.index
+            "Initiating connection to {} ({})",
+            peer.index,
+            if active {"immediate"} else {"delayed"}
         );
         loop {
             match Self::connect_and_handshake(&peer, &pk).await {
@@ -313,7 +316,7 @@ impl ConnectionTask {
         peer: PeerInfo,
     ) {
         while let Some(message) = receiver.recv().await {
-            tracing::debug!("Sending {} bytes to {}", message.data.len(), peer.index);
+            tracing::trace!("Sending {} bytes to {}", message.data.len(), peer.index);
             if let Err(err) = writer.write_frame(&message.data).await {
                 tracing::debug!("Failed to write to {}: {}", peer.public_key, err);
                 return;
@@ -330,7 +333,7 @@ impl ConnectionTask {
         loop {
             match reader.read_frame_encrypted().await {
                 Ok(message) => {
-                    tracing::debug!("Received {} bytes from {}", message.len(), peer.index);
+                    tracing::trace!("Received {} bytes from {}", message.len(), peer.index);
                     let data = Bytes::copy_from_slice(message);
                     let message = NetworkMessage { data };
                     if sender.send(message).await.is_err() {
