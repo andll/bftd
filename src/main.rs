@@ -18,15 +18,16 @@ mod committee;
 mod consensus;
 mod core;
 mod crypto;
+mod genesis;
 mod log;
 mod mempool;
 mod network;
 mod rpc;
-mod syncer;
-mod threshold_clock;
 #[cfg(feature = "server")]
 mod server;
-mod genesis;
+mod store;
+mod syncer;
+mod threshold_clock;
 
 fn main() {
     tracing_subscriber::fmt()

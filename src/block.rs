@@ -127,6 +127,7 @@ impl Block {
         let payload_offset = Self::PARENTS_OFFSET + parents_len;
         let mut data = BytesMut::with_capacity(payload.len() + payload_offset);
         data.put_bytes(0, Self::ROUND_OFFSET);
+        // todo change all encoding to be
         data.put_u64_le(round.0);
         data.put_u64_le(author.0);
         data.put_slice(&chain_id.0);
@@ -301,6 +302,7 @@ impl BlockReference {
     pub const SIZE: usize = Self::HASH_OFFSET + BLOCK_HASH_LENGTH;
 
     pub fn from_bytes(bytes: &[u8; Self::SIZE]) -> Self {
+        // todo change to be bytes
         let round = Round(u64::from_le_bytes(
             bytes[Self::ROUND_OFFSET..Self::ROUND_OFFSET + 8]
                 .try_into()
@@ -329,6 +331,22 @@ impl BlockReference {
         buf.put_slice(&self.hash.0);
     }
 
+    pub fn round_author_hash_encoding(&self) -> [u8; Self::SIZE] {
+        let mut r = [0u8; Self::SIZE];
+        r[..8].copy_from_slice(&self.round.0.to_be_bytes());
+        r[8..16].copy_from_slice(&self.author.0.to_be_bytes());
+        r[16..].copy_from_slice(&self.hash.0);
+        r
+    }
+
+    pub fn author_round_hash_encoding(&self) -> [u8; Self::SIZE] {
+        let mut r = [0u8; Self::SIZE];
+        r[..8].copy_from_slice(&self.author.0.to_be_bytes());
+        r[8..16].copy_from_slice(&self.round.0.to_be_bytes());
+        r[16..].copy_from_slice(&self.hash.0);
+        r
+    }
+
     pub fn author_round(&self) -> AuthorRound {
         AuthorRound::new(self.author, self.round)
     }
@@ -344,10 +362,25 @@ impl BlockReference {
             hash: BlockHash::MIN,
         }
     }
+    pub fn first_block_reference_for_round_author(round: Round, author: ValidatorIndex) -> Self {
+        Self {
+            round,
+            author,
+            hash: BlockHash::MIN,
+        }
+    }
+    pub fn last_block_reference_for_round_author(round: Round, author: ValidatorIndex) -> Self {
+        Self {
+            round,
+            author,
+            hash: BlockHash::MAX,
+        }
+    }
 }
 
 impl Round {
     pub const ZERO: Round = Round(0);
+    pub const MAX: Round = Round(u64::MAX);
 
     pub fn previous(&self) -> Self {
         assert!(self.0 > 0);

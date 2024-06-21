@@ -1,7 +1,7 @@
-use bytes::Bytes;
 use crate::block::ChainId;
 use crate::committee::ValidatorInfo;
 use crate::crypto::{Blake2Hasher, Hasher};
+use bytes::Bytes;
 
 const GENERATION_LENGTH: usize = 32;
 

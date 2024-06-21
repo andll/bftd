@@ -1,11 +1,11 @@
-use std::io::Read;
-use std::net::{ToSocketAddrs};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::{io, thread};
-use std::thread::JoinHandle;
-use tiny_http::{Request, Response, StatusCode};
 use crate::mempool::{BasicMempoolClient, MAX_TRANSACTION};
+use std::io::Read;
+use std::net::ToSocketAddrs;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread::JoinHandle;
+use std::{io, thread};
+use tiny_http::{Request, Response, StatusCode};
 
 pub struct BftdServer {
     stop: Arc<AtomicBool>,
@@ -18,7 +18,7 @@ impl BftdServer {
         let stop = Arc::new(AtomicBool::new(false));
         let server = Arc::new(tiny_http::Server::http(address).unwrap());
         let buffer = vec![0u8; MAX_TRANSACTION].into_boxed_slice();
-        let acceptor  = BftdServerAcceptor {
+        let acceptor = BftdServerAcceptor {
             mempool_client,
             server: server.clone(),
             stop: stop.clone(),
@@ -60,19 +60,15 @@ impl BftdServerAcceptor {
     pub fn run(mut self) {
         loop {
             match self.server.recv() {
-                Ok(request) => {
-                    match request.url() {
-                        "/send" => {
-                            self.handle_send(request).ok();
-                        }
-                        "/tail" => {
-
-                        }
-                        _ => {
-                            request.respond(Response::new_empty(StatusCode(404))).ok();
-                        }
+                Ok(request) => match request.url() {
+                    "/send" => {
+                        self.handle_send(request).ok();
                     }
-                }
+                    "/tail" => {}
+                    _ => {
+                        request.respond(Response::new_empty(StatusCode(404))).ok();
+                    }
+                },
                 Err(err) => {
                     if !self.stop.load(Ordering::SeqCst) {
                         panic!("Acceptor thread stopped with {err}")
