@@ -14,3 +14,4 @@ prometheus = "0.13.4"
 axum = "0.7.5"
 tracing = "0.1.40"
 futures = "0.3.30"
+tracing-subscriber = { version = "0.3.18",features = ["env-filter"] }

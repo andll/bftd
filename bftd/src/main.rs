@@ -7,7 +7,8 @@ use anyhow::bail;
 use clap::Parser;
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::{fs, process};
+use std::{fs, process, thread};
+use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
 enum Args {
@@ -32,6 +33,10 @@ struct LocalClusterArgs {
 
 fn main() {
     let args = Args::parse();
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .with_thread_names(true)
+        .init();
     if let Err(err) = handle_args(args) {
         println!("error: {err}");
         process::exit(1);
@@ -71,6 +76,7 @@ fn handle_new_chain(args: NewChainArgs) -> anyhow::Result<()> {
 fn handle_local_cluster(args: LocalClusterArgs) -> anyhow::Result<()> {
     let clusters_path = PathBuf::from("clusters");
     let path = clusters_path.join(&args.name);
-
+    let _handles = TestCluster::start_test_cluster(path)?;
+    thread::park();
     Ok(())
 }

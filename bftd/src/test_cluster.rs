@@ -1,3 +1,4 @@
+use crate::node::{Node, NodeHandle};
 use bftd_core::block::ValidatorIndex;
 use bftd_core::committee::{Stake, ValidatorInfo};
 use bftd_core::config::BftdConfig;
@@ -7,6 +8,7 @@ use bftd_core::network::{generate_network_keypair, NoisePrivateKey};
 use rand::rngs::ThreadRng;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::{fs, io};
 
 pub struct TestCluster {
@@ -73,14 +75,39 @@ impl TestCluster {
             .zip(self.configs.iter())
             .enumerate()
         {
-            let peer_dir = path.join(format!("{v:0>3}"));
+            let peer_dir = Self::peer_path(&path, v);
             fs::create_dir(&peer_dir)?;
             fs::write(peer_dir.join("noise_key"), noise_pk)?;
             fs::write(peer_dir.join("protocol_key"), protocol_pk)?;
             let config = toml::to_string_pretty(&config).unwrap();
             fs::write(peer_dir.join("config"), &config)?;
         }
-        fs::write(path.join("genesis"), self.genesis.data())?;
+        fs::write(Self::genesis_path(&path), self.genesis.data())?;
         Ok(())
+    }
+
+    pub fn start_test_cluster(path: PathBuf) -> anyhow::Result<Vec<NodeHandle>> {
+        let genesis = Genesis::load(fs::read(Self::genesis_path(&path))?.into())?;
+        let genesis = Arc::new(genesis);
+        let mut nodes = Vec::with_capacity(genesis.validators().len());
+        for v in 0..genesis.validators().len() {
+            let peer_dir = Self::peer_path(&path, v);
+            let node = Node::load(&peer_dir, genesis.clone())?;
+            nodes.push(node);
+        }
+        let mut handles = Vec::with_capacity(genesis.validators().len());
+        for node in nodes {
+            let handle = node.start()?;
+            handles.push(handle);
+        }
+        Ok(handles)
+    }
+
+    fn genesis_path(path: &PathBuf) -> PathBuf {
+        path.join("genesis")
+    }
+
+    fn peer_path(path: &PathBuf, v: usize) -> PathBuf {
+        path.join(format!("{v:0>3}"))
     }
 }

@@ -13,6 +13,8 @@ use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
+use tokio::runtime;
+use tokio::runtime::Runtime;
 
 pub struct Node {
     config: BftdConfig,
@@ -22,9 +24,11 @@ pub struct Node {
     storage_path: PathBuf,
 }
 
+#[allow(dead_code)]
 pub struct NodeHandle {
     syncer: Syncer,
     prometheus_handle: Option<PrometheusJoinHandle>,
+    runtime: Runtime,
 }
 
 impl Node {
@@ -45,7 +49,7 @@ impl Node {
         })
     }
 
-    pub async fn start(self) -> anyhow::Result<NodeHandle> {
+    pub fn start(self) -> anyhow::Result<NodeHandle> {
         let committee = self.genesis.make_committee();
         let peers = committee.make_peers_info();
         let bind = if let Some(bind) = self.config.bind.as_ref() {
@@ -61,19 +65,25 @@ impl Node {
         } else {
             *committee.network_address(self.config.validator_index)
         };
-        let pool = ConnectionPool::start(
+        let runtime = runtime::Builder::new_multi_thread()
+            .enable_all()
+            .thread_name(format!("{}", self.config.validator_index))
+            .build()
+            .unwrap();
+        let _enter = runtime.enter(); // rest of the function in the context of node's runtime
+
+        let pool = runtime.block_on(ConnectionPool::start(
             bind,
             self.noise_private_key.clone(),
             peers,
             self.config.validator_index.0 as usize,
-        )
-        .await?;
+        ))?;
         let block_store = SledStore::open(&self.storage_path)?;
         let block_store = Arc::new(block_store);
         let registry = Registry::new();
         let metrics = Metrics::new_in_registry(&registry);
         let prometheus_handle = if let Some(prometheus_bind) = self.config.prometheus_bind {
-            Some(start_prometheus_server(prometheus_bind, &registry).await?)
+            Some(runtime.block_on(start_prometheus_server(prometheus_bind, &registry))?)
         } else {
             None
         };
@@ -90,6 +100,7 @@ impl Node {
         Ok(NodeHandle {
             syncer,
             prometheus_handle,
+            runtime,
         })
     }
 }
