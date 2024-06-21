@@ -4,6 +4,7 @@ use crate::committee::Committee;
 use crate::consensus::{DecidedCommit, UniversalCommitter, UniversalCommitterBuilder};
 use crate::core::Core;
 use crate::crypto::Signer;
+use crate::metrics::Metrics;
 use crate::network::ConnectionPool;
 use crate::rpc::{
     NetworkRequest, NetworkResponse, NetworkRpc, NetworkRpcRouter, PeerRpcTaskCommand, RpcResult,
@@ -36,6 +37,7 @@ struct SyncerTask<S, B, C> {
     last_decided: AuthorRound,
     stop: oneshot::Receiver<()>,
     clock: C,
+    metrics: Arc<Metrics>,
 }
 
 struct SyncerInner<B> {
@@ -58,6 +60,7 @@ impl Syncer {
         clock: C,
     ) -> Self {
         let committee = core.committee().clone();
+        let metrics = core.metrics().clone();
         let committer = UniversalCommitterBuilder::new(committee.clone(), block_store.clone())
             .with_pipeline(true)
             .with_number_of_leaders(1)
@@ -97,6 +100,7 @@ impl Syncer {
             last_decided: AuthorRound::default(), // todo load
             stop: stop_receiver,
             clock,
+            metrics,
         };
         let handle = tokio::spawn(syncer.run());
         Syncer {
@@ -132,6 +136,7 @@ impl<S: Signer, B: BlockStore + Clone, C: Clock> SyncerTask<S, B, C> {
                     let reference = *block.reference();
                     // todo need more block verification
                     let age_ms = self.clock.time_ns().saturating_sub(block.time_ns()) / 1000 / 1000;
+                    self.metrics.syncer_received_block_age_ms.observe(age_ms as f64);
                     let add_block_result = self.core.add_block(block);
                     let added_this = add_block_result.added.iter().any(|b|*b.reference() == reference);
                     tracing::debug!("Received {reference} {} age {age_ms} ms", if added_this {

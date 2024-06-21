@@ -2,6 +2,7 @@ use crate::block::{Block, BlockReference, ChainId, Round, ValidatorIndex};
 use crate::block_manager::{AddBlockResult, BlockManager, BlockStore};
 use crate::committee::Committee;
 use crate::crypto::{Blake2Hasher, Signer};
+use crate::metrics::Metrics;
 use crate::threshold_clock::ThresholdClockAggregator;
 use bytes::Bytes;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -15,6 +16,7 @@ pub struct Core<S, B> {
     last_proposed_round: Round,
     index: ValidatorIndex,
     parents_accumulator: ParentsAccumulator,
+    metrics: Arc<Metrics>,
 }
 
 pub trait ProposalMaker {
@@ -27,6 +29,7 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
         block_store: B,
         committee: Arc<Committee>,
         index: ValidatorIndex,
+        metrics: Arc<Metrics>,
     ) -> Self {
         let block_manager = BlockManager::new(block_store);
         // todo recover items below
@@ -41,6 +44,7 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
             last_proposed_round,
             index,
             parents_accumulator,
+            metrics,
         }
     }
 
@@ -97,6 +101,7 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
         result.assert_added(block.reference());
         self.blocks_inserted(&result.added);
         self.last_proposed_round = round;
+        self.metrics.core_last_proposed_round.set(round.0 as i64);
         block
     }
 
@@ -114,6 +119,9 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
 
     pub fn validator_index(&self) -> ValidatorIndex {
         self.index
+    }
+    pub fn metrics(&self) -> &Arc<Metrics> {
+        &self.metrics
     }
 }
 

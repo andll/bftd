@@ -8,10 +8,7 @@ use std::path::PathBuf;
 use std::{fs, process};
 
 #[derive(Parser, Debug)]
-// #[command(version, about, long_about = None)]
 enum Args {
-    /// Name of the person to greet
-    // #[arg(short, long)]
     NewChain(NewChainArgs),
 }
 
