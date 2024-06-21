@@ -63,25 +63,25 @@ impl BlockStore for SledStore {
     }
 
     fn last_known_round(&self, validator: ValidatorIndex) -> Round {
+        self.last_known_block(validator).round()
+    }
+
+    fn last_known_block(&self, validator: ValidatorIndex) -> Arc<Block> {
         let from = BlockReference::first_block_reference_for_round_author(Round::ZERO, validator)
             .author_round_hash_encoding();
         let to = BlockReference::first_block_reference_for_round_author(Round::MAX, validator)
             .author_round_hash_encoding();
 
-        // todo - need to verify entry in .blocks exists since index can be dirty
-        if let Some(v) = self.index.range(from..to).last() {
-            // todo implement as BlockReference method
-            let round = u64::from_be_bytes(
-                v.expect("Storage operation failed").0[8..16]
-                    .try_into()
-                    .unwrap(),
-            );
-            Round(round)
-        } else {
-            panic!(
-                "No blocks found for validator in the storage(should have at least genesis block"
-            );
+        for key in self.index.range(from..to).rev() {
+            let key = key.expect("Storage operation failed").1;
+            let block = self.blocks.get(&key).expect("Storage operation failed");
+            // index can be dirty, skip to next entry in that case
+            let Some(block) = block else {
+                continue;
+            };
+            return Self::decode(block);
         }
+        panic!("No blocks found for validator in the storage(should have at least genesis block)");
     }
 
     fn exists(&self, key: &BlockReference) -> bool {

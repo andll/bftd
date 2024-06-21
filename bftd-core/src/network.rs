@@ -819,7 +819,7 @@ mod test {
                                     connection.peer.index
                                 );
                             }
-                            Some(d) => {
+                            Some(_d) => {
                                 println!("{a} received message from {}", connection.peer.index);
                                 s.send((a, connection.peer.index)).await.unwrap();
                             }

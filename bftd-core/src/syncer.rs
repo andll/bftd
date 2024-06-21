@@ -1,4 +1,4 @@
-use crate::block::{AuthorRound, Block, BlockReference, ChainId, Round, ValidatorIndex};
+use crate::block::{AuthorRound, Block, BlockReference, Round, ValidatorIndex};
 use crate::block_manager::BlockStore;
 use crate::committee::Committee;
 use crate::consensus::{DecidedCommit, UniversalCommitter, UniversalCommitterBuilder};
@@ -123,12 +123,7 @@ impl Syncer {
 
 impl<S: Signer, B: BlockStore + Clone, C: Clock> SyncerTask<S, B, C> {
     pub async fn run(mut self) {
-        for block in self.core.committee().genesis_blocks(ChainId::CHAIN_ID_TEST) {
-            let block = Arc::new(block);
-            self.core.add_block(block);
-        }
-        let proposed = self.make_proposal();
-        assert!(proposed, "must generate proposal after genesis");
+        self.try_make_proposal();
         let (mut committed, mut skipped) = (0usize, 0usize);
         let mut proposal_deadline: Pin<Box<dyn Future<Output = ()> + Send>> =
             futures::future::pending().boxed();
@@ -169,7 +164,7 @@ impl<S: Signer, B: BlockStore + Clone, C: Clock> SyncerTask<S, B, C> {
                             }
                         }
                         if ready {
-                            self.make_proposal();
+                            self.try_make_proposal();
                             proposal_deadline = futures::future::pending().boxed();
                             proposal_deadline_set = false;
                             waiting_leaders = None;
@@ -207,7 +202,7 @@ impl<S: Signer, B: BlockStore + Clone, C: Clock> SyncerTask<S, B, C> {
                     let waiting_round = self.core.vector_clock_round().unwrap_or_default().previous();
                     let timeouts: Vec<_> = waiting_leaders.as_ref().unwrap().iter().map(|l|AuthorRound::new(*l, waiting_round)).collect();
                     tracing::warn!("Leader timeout {timeouts:?}");
-                    self.make_proposal();
+                    self.try_make_proposal();
                     proposal_deadline = futures::future::pending().boxed();
                     proposal_deadline_set = false;
                     waiting_leaders = None;
@@ -221,10 +216,10 @@ impl<S: Signer, B: BlockStore + Clone, C: Clock> SyncerTask<S, B, C> {
         self.rpc.stop().await;
     }
 
-    fn make_proposal(&mut self) -> bool {
+    fn try_make_proposal(&mut self) {
         let round = self.core.vector_clock_round();
         let Some(round) = round else {
-            return false;
+            return;
         };
         let previous = round.previous();
         if previous > self.core.last_proposed_round() {
@@ -236,7 +231,6 @@ impl<S: Signer, B: BlockStore + Clone, C: Clock> SyncerTask<S, B, C> {
             }
         }
         self.make_proposal_for_round(round);
-        true
     }
 
     fn make_proposal_for_round(&mut self, round: Round) {

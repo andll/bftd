@@ -141,7 +141,7 @@ mod tests {
     async fn payload_builder_test() {
         let transactions = vec![vec![1u8, 2], vec![3, 5, 6], vec![7]];
         let (mut mempool, mut client) = BasicMempool::new();
-        let proposal = mempool.make_proposal();
+        let _proposal = mempool.make_proposal();
         for transaction in transactions.clone() {
             future::poll_immediate(client.send_transaction(transaction))
                 .await

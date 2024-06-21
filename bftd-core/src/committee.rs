@@ -13,6 +13,7 @@ use std::ops::AddAssign;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Committee {
+    chain_id: ChainId,
     validators: Vec<ValidatorInfo>,
     total_stake: Stake,
     pub f_threshold: Stake,  // The minimum stake required for validity(f+1)
@@ -33,7 +34,7 @@ pub struct ValidatorInfo {
 }
 
 impl Committee {
-    pub fn new(validators: Vec<ValidatorInfo>) -> Self {
+    pub fn new(chain_id: ChainId, validators: Vec<ValidatorInfo>) -> Self {
         assert!(validators.len() < MAX_COMMITTEE as usize);
         let total_stake = validators.iter().map(|v| v.stake.0).sum();
         let f_threshold = total_stake / 3;
@@ -42,6 +43,7 @@ impl Committee {
         let f_threshold = Stake(f_threshold);
         let f2_threshold = Stake(f2_threshold);
         Self {
+            chain_id,
             validators,
             total_stake,
             f_threshold,
@@ -66,6 +68,8 @@ impl Committee {
             bail!("Validator not found")
         };
         // todo - other validity (thr clock etc)
+        // todo check chain_id
+        // todo put chain id into network handshake
         Block::from_bytes(data, &Blake2Hasher, &author.consensus_key)
     }
 
@@ -104,9 +108,9 @@ impl Committee {
             .map(|(i, _)| ValidatorIndex(i as u64))
     }
 
-    pub fn genesis_blocks(&self, chain_id: ChainId) -> Vec<Block> {
+    pub fn genesis_blocks(&self) -> Vec<Block> {
         self.enumerate_validators()
-            .map(|(i, _)| Block::genesis(chain_id, i))
+            .map(|(i, _)| Block::genesis(self.chain_id, i))
             .collect()
     }
 
@@ -130,6 +134,10 @@ impl Committee {
             })
             .collect()
     }
+
+    pub fn len(&self) -> usize {
+        self.validators.len()
+    }
 }
 
 impl Stake {
@@ -146,6 +154,7 @@ impl AddAssign for Stake {
 impl Committee {
     pub fn new_test(v: Vec<u64>) -> Self {
         Self::new(
+            ChainId::CHAIN_ID_TEST,
             v.into_iter()
                 .map(|stake| ValidatorInfo {
                     consensus_key: Default::default(),

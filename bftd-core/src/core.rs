@@ -31,12 +31,21 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
         index: ValidatorIndex,
         metrics: Arc<Metrics>,
     ) -> Self {
+        for block in committee.genesis_blocks() {
+            let block = Arc::new(block);
+            block_store.put(block);
+        }
+        let mut latest_blocks = Vec::with_capacity(committee.len());
+        for validator in committee.enumerate_indexes() {
+            let last_block = block_store.last_known_block(validator);
+            latest_blocks.push(last_block);
+        }
+        let last_proposed_round = block_store.last_known_round(index);
         let block_manager = BlockManager::new(block_store);
-        // todo recover items below
-        let last_proposed_round = Round::ZERO;
         let proposer_clock = ThresholdClockAggregator::new(last_proposed_round);
+        // todo recover other nodes for parents accumulator?
         let parents_accumulator = ParentsAccumulator::new();
-        Self {
+        let mut this = Self {
             signer,
             block_manager,
             proposer_clock,
@@ -45,7 +54,9 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
             index,
             parents_accumulator,
             metrics,
-        }
+        };
+        this.blocks_inserted(&latest_blocks);
+        this
     }
 
     /// returns new missing blocks
@@ -55,6 +66,8 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
         result
     }
 
+    /// returns vector clock round for new proposal
+    /// returns none if vector clock round is below or equal last proposed round
     pub fn vector_clock_round(&self) -> Option<Round> {
         let round = self.proposer_clock.get_round();
         if round > self.last_proposed_round {

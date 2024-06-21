@@ -54,6 +54,6 @@ impl Genesis {
     }
 
     pub fn make_committee(&self) -> Arc<Committee> {
-        Arc::new(Committee::new(self.validators.clone()))
+        Arc::new(Committee::new(self.chain_id, self.validators.clone()))
     }
 }

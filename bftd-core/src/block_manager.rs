@@ -14,6 +14,7 @@ pub trait BlockStore: Send + Sync + 'static {
     fn get(&self, key: &BlockReference) -> Option<Arc<Block>>;
     fn get_own(&self, validator: ValidatorIndex, round: Round) -> Option<Arc<Block>>;
     fn last_known_round(&self, validator: ValidatorIndex) -> Round;
+    fn last_known_block(&self, validator: ValidatorIndex) -> Arc<Block>;
     fn exists(&self, key: &BlockReference) -> bool;
 
     fn get_blocks_by_round(&self, round: Round) -> Vec<Arc<Block>>;
@@ -140,6 +141,10 @@ mod tests {
             unimplemented!()
         }
 
+        fn last_known_block(&self, _validator: ValidatorIndex) -> Arc<Block> {
+            unimplemented!()
+        }
+
         fn exists(&self, key: &BlockReference) -> bool {
             self.lock().contains_key(key)
         }
@@ -220,18 +225,21 @@ impl BlockStore for MemoryBlockStore {
     }
 
     fn last_known_round(&self, validator: ValidatorIndex) -> Round {
+        self.last_known_block(validator).round()
+    }
+
+    fn last_known_block(&self, validator: ValidatorIndex) -> Arc<Block> {
         // todo performance
         let lock = self.read();
-        for (round, map) in lock.iter().rev() {
-            if map
+        for (_round, map) in lock.iter().rev() {
+            if let Some((_, block)) = map
                 .range((validator, BlockHash::MIN)..(validator, BlockHash::MAX))
                 .next()
-                .is_some()
             {
-                return *round;
+                return block.clone();
             }
         }
-        Round::ZERO
+        panic!("Should have at least one block for each validator");
     }
 
     fn exists(&self, key: &BlockReference) -> bool {
@@ -308,6 +316,10 @@ impl<T: BlockStore> BlockStore for Arc<T> {
 
     fn last_known_round(&self, validator: ValidatorIndex) -> Round {
         self.deref().last_known_round(validator)
+    }
+
+    fn last_known_block(&self, validator: ValidatorIndex) -> Arc<Block> {
+        self.deref().last_known_block(validator)
     }
 
     fn exists(&self, key: &BlockReference) -> bool {
