@@ -1,5 +1,5 @@
 use crate::network::{Connection, NetworkMessage};
-use crate::{ConnectionPool, NoisePublicKey};
+use crate::network::{ConnectionPool, NoisePublicKey};
 use bytes::Bytes;
 use futures::future::{join_all, select_all, Either};
 use futures::FutureExt;
@@ -71,7 +71,6 @@ impl NetworkRpc {
                 let data = PeerTaskData {
                     router,
                     receiver: r,
-                    peer_public_key: k.clone(),
                 };
                 ((k.clone(), s), (k, data))
             })
@@ -179,7 +178,6 @@ struct RpcTask {
 struct PeerTaskData {
     router: Box<dyn NetworkRpcRouter>,
     receiver: mpsc::Receiver<PeerRpcTaskCommand>,
-    peer_public_key: NoisePublicKey,
 }
 
 impl RpcTask {

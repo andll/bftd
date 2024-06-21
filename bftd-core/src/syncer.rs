@@ -4,10 +4,10 @@ use crate::committee::Committee;
 use crate::consensus::{DecidedCommit, UniversalCommitter, UniversalCommitterBuilder};
 use crate::core::Core;
 use crate::crypto::Signer;
+use crate::network::ConnectionPool;
 use crate::rpc::{
     NetworkRequest, NetworkResponse, NetworkRpc, NetworkRpcRouter, PeerRpcTaskCommand, RpcResult,
 };
-use crate::ConnectionPool;
 use bytes::Bytes;
 use futures::FutureExt;
 use serde::{Deserialize, Serialize};

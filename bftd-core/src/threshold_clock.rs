@@ -7,6 +7,7 @@ use std::marker::PhantomData;
 // - all included blocks have a round number lower than the block round number.
 // - the set of authorities with blocks included has a quorum in the current committee.
 // todo - tests and usage
+#[allow(dead_code)]
 pub fn threshold_clock_valid_non_genesis(block: &Block, committee: &Committee) -> bool {
     // get a committee from the creator of the block
     let round_number = block.reference().round;
@@ -130,6 +131,7 @@ const VALIDATOR_SET_ELEMENT_COUNT: usize = 8;
 pub struct ValidatorSet([ValidatorSetElementType; VALIDATOR_SET_ELEMENT_COUNT]);
 
 impl ValidatorSet {
+    #[allow(dead_code)]
     pub const MAX_SIZE: usize = ELEMENT_BITS * VALIDATOR_SET_ELEMENT_COUNT;
 
     #[inline]
@@ -148,6 +150,7 @@ impl ValidatorSet {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn remove(&mut self, index: ValidatorIndex) -> bool {
         let index = index.0 as usize;
         let byte_index = index / ELEMENT_BITS;
@@ -163,6 +166,7 @@ impl ValidatorSet {
     }
 
     #[inline]
+    #[allow(dead_code)]
     pub fn contains(&self, index: ValidatorIndex) -> bool {
         let index = index.0 as usize;
         let byte_index = index / ELEMENT_BITS;
@@ -187,6 +191,7 @@ impl ValidatorSet {
         self.0.fill(0);
     }
 
+    #[allow(dead_code)]
     pub fn all_set() -> Self {
         Self([u64::MAX; VALIDATOR_SET_ELEMENT_COUNT])
     }

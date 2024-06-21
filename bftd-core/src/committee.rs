@@ -1,6 +1,6 @@
 use crate::block::{Block, ChainId, Round, ValidatorIndex};
 use crate::crypto::{Blake2Hasher, Ed25519Verifier};
-use crate::NoisePublicKey;
+use crate::network::NoisePublicKey;
 use anyhow::{bail, ensure};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};

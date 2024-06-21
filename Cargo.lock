@@ -158,6 +158,13 @@ dependencies = [
 name = "bftd"
 version = "0.1.0"
 dependencies = [
+ "bftd-core",
+]
+
+[[package]]
+name = "bftd-core"
+version = "0.1.0"
+dependencies = [
  "anyhow",
  "async-trait",
  "bincode",

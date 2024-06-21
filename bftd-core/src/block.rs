@@ -111,6 +111,10 @@ impl Block {
         )))
     }
 
+    pub fn chain_id(&self) -> &ChainId {
+        &self.chain_id
+    }
+
     pub fn new(
         round: Round,
         author: ValidatorIndex,

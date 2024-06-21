@@ -1,0 +1,7 @@
+[package]
+name = "bftd"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bftd-core = { path = "../bftd-core" }

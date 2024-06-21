@@ -5,9 +5,9 @@ use crate::block::{
     format_author_round, AuthorRound, Block, BlockReference, Round, ValidatorIndex,
 };
 use crate::block_manager::BlockStore;
+use crate::committee::Committee;
 use crate::committee::Stake;
 use crate::threshold_clock::{QuorumThreshold, StakeAggregator};
-use crate::Committee;
 use std::collections::HashMap;
 use std::iter::Sum;
 use std::{fmt::Display, sync::Arc};
