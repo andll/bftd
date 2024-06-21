@@ -24,6 +24,9 @@ mod network;
 mod rpc;
 mod syncer;
 mod threshold_clock;
+#[cfg(feature = "server")]
+mod server;
+mod genesis;
 
 fn main() {
     tracing_subscriber::fmt()
