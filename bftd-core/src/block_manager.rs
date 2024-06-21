@@ -11,6 +11,7 @@ pub struct BlockManager<S> {
 
 pub trait BlockStore: Send + Sync + 'static {
     fn put(&self, block: Arc<Block>);
+    fn flush(&self);
     fn get(&self, key: &BlockReference) -> Option<Arc<Block>>;
     fn get_own(&self, validator: ValidatorIndex, round: Round) -> Option<Arc<Block>>;
     fn last_known_round(&self, validator: ValidatorIndex) -> Round;
@@ -83,6 +84,10 @@ impl<S: BlockStore> BlockManager<S> {
             previously_missing,
         }
     }
+
+    pub fn flush(&self) {
+        self.store.flush()
+    }
 }
 
 impl AddBlockResult {
@@ -128,6 +133,8 @@ mod tests {
         fn put(&self, block: Arc<Block>) {
             self.lock().insert(*block.reference(), block);
         }
+
+        fn flush(&self) {}
 
         fn get(&self, key: &BlockReference) -> Option<Arc<Block>> {
             self.lock().get(key).cloned()
@@ -205,6 +212,8 @@ impl BlockStore for MemoryBlockStore {
             .or_default()
             .insert((block.author(), *block.block_hash()), block);
     }
+
+    fn flush(&self) {}
 
     fn get(&self, key: &BlockReference) -> Option<Arc<Block>> {
         self.read()
@@ -304,6 +313,10 @@ impl BlockStore for MemoryBlockStore {
 impl<T: BlockStore> BlockStore for Arc<T> {
     fn put(&self, block: Arc<Block>) {
         self.deref().put(block)
+    }
+
+    fn flush(&self) {
+        self.deref().flush()
     }
 
     fn get(&self, key: &BlockReference) -> Option<Arc<Block>> {

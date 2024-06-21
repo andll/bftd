@@ -111,6 +111,7 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
         );
         let block = Arc::new(block);
         let result = self.block_manager.add_block(block.clone());
+        self.block_manager.flush();
         result.assert_added(block.reference());
         self.blocks_inserted(&result.added);
         self.last_proposed_round = round;

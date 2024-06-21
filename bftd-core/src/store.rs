@@ -39,6 +39,11 @@ impl BlockStore for SledStore {
             .expect("Storage operation failed");
     }
 
+    fn flush(&self) {
+        // trees share pagecache so single flush should be enough for blocks and index
+        self.blocks.flush().expect("Flush failed");
+    }
+
     fn get(&self, key: &BlockReference) -> Option<Arc<Block>> {
         let block_key = key.round_author_hash_encoding();
         let block = self

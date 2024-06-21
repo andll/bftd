@@ -73,7 +73,7 @@ impl Syncer {
             .build();
         let validator_index = core.validator_index();
         let (last_proposed_round_sender, last_proposed_round_receiver) =
-            tokio::sync::watch::channel(Round::ZERO);
+            tokio::sync::watch::channel(core.last_proposed_round());
         let (blocks_sender, blocks_receiver) = mpsc::channel(10);
         let inner = Arc::new(SyncerInner {
             block_store: block_store.clone(),
