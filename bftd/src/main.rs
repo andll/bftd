@@ -19,6 +19,8 @@ enum Args {
 struct NewChainArgs {
     name: String,
     peer_addresses: Vec<SocketAddr>,
+    #[arg(long, short = 'b')]
+    bind: Option<String>,
 }
 
 fn main() {
@@ -47,7 +49,8 @@ fn handle_new_chain(new_chain: NewChainArgs) -> anyhow::Result<()> {
     if new_chain.peer_addresses.len() < 4 {
         bail!("Chain must have at least 4 peers");
     }
-    let test_cluster = TestCluster::generate(&new_chain.name, new_chain.peer_addresses);
+    let test_cluster =
+        TestCluster::generate(&new_chain.name, new_chain.peer_addresses, new_chain.bind);
     println!("Storing test cluster into {path:?}");
     test_cluster.store_into(&path)?;
     Ok(())
