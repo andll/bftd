@@ -1,4 +1,4 @@
-use crate::block::{BlockHash, BlockSignature};
+use crate::block::{BlockHash, BlockSignature, BLOCK_HASH_LENGTH};
 use blake2::{Blake2b, Digest};
 use ed25519_consensus::{SigningKey, VerificationKey};
 use serde::{Deserialize, Serialize};
@@ -36,8 +36,12 @@ impl SignatureVerifier for Ed25519Verifier {
 
 impl Hasher for Blake2Hasher {
     fn hash_bytes(&self, bytes: &[u8]) -> BlockHash {
-        BlockHash(Blake2b::digest(bytes).into())
+        BlockHash(blake2_hash(bytes))
     }
+}
+
+pub fn blake2_hash(bytes: &[u8]) -> [u8; BLOCK_HASH_LENGTH] {
+    Blake2b::digest(bytes).into()
 }
 
 #[cfg(test)]

@@ -39,7 +39,7 @@ pub struct AuthorRound {
 }
 
 const SIGNATURE_LENGTH: usize = 64;
-const BLOCK_HASH_LENGTH: usize = 32;
+pub const BLOCK_HASH_LENGTH: usize = 32;
 const CHAIN_ID_LENGTH: usize = 32;
 pub const MAX_PARENTS: usize = 1024;
 
