@@ -28,7 +28,7 @@ pub struct Node {
 pub struct NodeHandle {
     syncer: Syncer,
     prometheus_handle: Option<PrometheusJoinHandle>,
-    runtime: Runtime,
+    runtime: Arc<Runtime>,
 }
 
 impl Node {
@@ -55,10 +55,10 @@ impl Node {
             .thread_name(format!("{}", self.config.validator_index))
             .build()
             .unwrap();
-        let handle = runtime.handle().clone();
-        handle.block_on(handle.spawn_blocking(move || self.start_inner(runtime)))?
+        let runtime = Arc::new(runtime);
+        runtime.block_on(self.start_inner(runtime.clone()))
     }
-    fn start_inner(self, runtime: Runtime) -> anyhow::Result<NodeHandle> {
+    async fn start_inner(self, runtime: Arc<Runtime>) -> anyhow::Result<NodeHandle> {
         let committee = self.genesis.make_committee();
         let peers = committee.make_peers_info();
         let bind = if let Some(bind) = self.config.bind.as_ref() {
@@ -75,18 +75,19 @@ impl Node {
             *committee.network_address(self.config.validator_index)
         };
 
-        let pool = runtime.block_on(ConnectionPool::start(
+        let pool = ConnectionPool::start(
             bind,
             self.noise_private_key.clone(),
             peers,
             self.config.validator_index.0 as usize,
-        ))?;
+        )
+        .await?;
         let block_store = SledStore::open(&self.storage_path)?;
         let block_store = Arc::new(block_store);
         let registry = Registry::new();
         let metrics = Metrics::new_in_registry(&registry);
         let prometheus_handle = if let Some(prometheus_bind) = self.config.prometheus_bind {
-            Some(runtime.block_on(start_prometheus_server(prometheus_bind, &registry))?)
+            Some(start_prometheus_server(prometheus_bind, &registry).await?)
         } else {
             None
         };
