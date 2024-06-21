@@ -1,6 +1,6 @@
 use crate::block::{Block, BlockReference, Round, ValidatorIndex};
 use crate::block_manager::BlockStore;
-use sled::{Db, IVec, Tree};
+use sled::{IVec, Tree};
 use std::io;
 use std::path::Path;
 use std::sync::Arc;
@@ -116,7 +116,30 @@ impl BlockStore for SledStore {
     }
 
     fn linked_to_round(&self, block: &Arc<Block>, round: Round) -> Vec<Arc<Block>> {
-        todo!()
+        // todo tests
+        // todo code dedup with MemoryStore
+        // todo optimize / index
+        let mut parents = vec![block.clone()];
+        for r in (round.0..block.round().0).rev() {
+            let blocks_for_round = self.get_blocks_by_round(Round(r));
+            parents = blocks_for_round
+                .iter()
+                .filter_map(|block| {
+                    if parents
+                        .iter()
+                        .any(|x| x.parents().contains(block.reference()))
+                    {
+                        Some(block.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if parents.is_empty() {
+                break;
+            }
+        }
+        parents
     }
 }
 
