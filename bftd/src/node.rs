@@ -50,6 +50,15 @@ impl Node {
     }
 
     pub fn start(self) -> anyhow::Result<NodeHandle> {
+        let runtime = runtime::Builder::new_multi_thread()
+            .enable_all()
+            .thread_name(format!("{}", self.config.validator_index))
+            .build()
+            .unwrap();
+        let handle = runtime.handle().clone();
+        handle.block_on(handle.spawn_blocking(move || self.start_inner(runtime)))?
+    }
+    fn start_inner(self, runtime: Runtime) -> anyhow::Result<NodeHandle> {
         let committee = self.genesis.make_committee();
         let peers = committee.make_peers_info();
         let bind = if let Some(bind) = self.config.bind.as_ref() {
@@ -65,12 +74,6 @@ impl Node {
         } else {
             *committee.network_address(self.config.validator_index)
         };
-        let runtime = runtime::Builder::new_multi_thread()
-            .enable_all()
-            .thread_name(format!("{}", self.config.validator_index))
-            .build()
-            .unwrap();
-        let _enter = runtime.enter(); // rest of the function in the context of node's runtime
 
         let pool = runtime.block_on(ConnectionPool::start(
             bind,
