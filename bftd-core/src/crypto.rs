@@ -1,5 +1,6 @@
 use crate::block::{BlockHash, BlockSignature, BLOCK_HASH_LENGTH};
 use blake2::{Blake2b, Digest};
+use rand::{CryptoRng, RngCore};
 use ed25519_consensus::{SigningKey, VerificationKey};
 use serde::{Deserialize, Serialize};
 
@@ -20,6 +21,12 @@ pub struct Blake2Hasher;
 pub struct Ed25519Signer(SigningKey);
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Ed25519Verifier(VerificationKey);
+
+pub fn generate_validator_key_pair(rng: &mut (impl RngCore + CryptoRng)) -> (Ed25519Signer, Ed25519Verifier) {
+    let signing_key = SigningKey::new(rng);
+    let verification_key = signing_key.verification_key();
+    (Ed25519Signer(signing_key), Ed25519Verifier(verification_key))
+}
 
 impl Signer for Ed25519Signer {
     fn sign_bytes(&self, bytes: &[u8]) -> BlockSignature {

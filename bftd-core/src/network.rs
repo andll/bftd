@@ -10,6 +10,7 @@ use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use snow::params::NoiseParams;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpSocket};
@@ -432,8 +433,7 @@ impl Handshake {
     }
 
     fn noise_builder(&self) -> snow::Builder {
-        snow::Builder::new("Noise_KX_25519_ChaChaPoly_BLAKE2s".parse().unwrap())
-            .local_private_key(self.pk.as_ref())
+        snow::Builder::new(noise_params()).local_private_key(self.pk.as_ref())
     }
 
     fn finalize(
@@ -446,6 +446,10 @@ impl Handshake {
         reader.set_transport_state(transport_state.clone());
         (reader, writer)
     }
+}
+
+fn noise_params() -> NoiseParams {
+    "Noise_KX_25519_ChaChaPoly_BLAKE2s".parse().unwrap()
 }
 
 impl AsRef<[u8]> for NoisePrivateKey {
@@ -633,6 +637,16 @@ impl NetworkMessage {
         Self { data }
     }
 }
+
+// todo - allow to pass rng
+pub fn generate_network_keypair() -> (NoisePrivateKey, NoisePublicKey) {
+    let builder = snow::Builder::new(noise_params());
+    let keypair = builder.generate_keypair().unwrap();
+    let private = NoisePrivateKey::from(keypair.private);
+    let public = NoisePublicKey(keypair.public);
+    (private, public)
+}
+
 
 #[cfg(test)]
 pub struct TestConnectionPool {
