@@ -4,13 +4,13 @@ use futures::future::join_all;
 use futures::join;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use snow::params::NoiseParams;
 use snow::{HandshakeState, TransportState};
 use std::collections::HashMap;
 use std::fmt;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use snow::params::NoiseParams;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpSocket};
@@ -646,7 +646,6 @@ pub fn generate_network_keypair() -> (NoisePrivateKey, NoisePublicKey) {
     let public = NoisePublicKey(keypair.public);
     (private, public)
 }
-
 
 #[cfg(test)]
 pub struct TestConnectionPool {
