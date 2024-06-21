@@ -132,11 +132,11 @@ mod tests {
             self.lock().get(key).cloned()
         }
 
-        fn get_own(&self, validator: ValidatorIndex, round: Round) -> Option<Arc<Block>> {
+        fn get_own(&self, _validator: ValidatorIndex, _round: Round) -> Option<Arc<Block>> {
             unimplemented!()
         }
 
-        fn last_known_round(&self, validator: ValidatorIndex) -> Round {
+        fn last_known_round(&self, _validator: ValidatorIndex) -> Round {
             unimplemented!()
         }
 

@@ -13,7 +13,6 @@ use super::{base_committer::BaseCommitter, DecidedCommit, LeaderStatus, DEFAULT_
 /// It can be configured to use a combination of different commit strategies, including
 /// multi-leaders, backup leaders, and pipelines.
 pub struct UniversalCommitter<B> {
-    block_store: B,
     committers: Vec<BaseCommitter<B>>,
     // metrics: Arc<Metrics>,
 }
@@ -116,6 +115,7 @@ impl<B: BlockStore + Clone> UniversalCommitterBuilder<B> {
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_wave_length(mut self, wave_length: u64) -> Self {
         self.wave_length = wave_length;
         self
@@ -149,7 +149,6 @@ impl<B: BlockStore + Clone> UniversalCommitterBuilder<B> {
         }
 
         UniversalCommitter {
-            block_store: self.block_store,
             committers,
             // metrics: self.metrics,
         }

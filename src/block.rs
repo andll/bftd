@@ -540,19 +540,19 @@ pub mod tests {
     }
 
     impl Hasher for [u8; BLOCK_HASH_LENGTH] {
-        fn hash_bytes(&self, bytes: &[u8]) -> BlockHash {
+        fn hash_bytes(&self, _bytes: &[u8]) -> BlockHash {
             BlockHash(*self)
         }
     }
 
     impl Signer for [u8; SIGNATURE_LENGTH] {
-        fn sign_bytes(&self, bytes: &[u8]) -> BlockSignature {
+        fn sign_bytes(&self, _bytes: &[u8]) -> BlockSignature {
             BlockSignature(*self)
         }
     }
 
     impl SignatureVerifier for [u8; SIGNATURE_LENGTH] {
-        fn check_signature(&self, bytes: &[u8], signature: &BlockSignature) -> bool {
+        fn check_signature(&self, _bytes: &[u8], signature: &BlockSignature) -> bool {
             signature.0 == *self
         }
     }

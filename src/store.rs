@@ -6,7 +6,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 pub struct SledStore {
-    db: Db,
     blocks: Tree,
     index: Tree,
 }
@@ -16,7 +15,7 @@ impl SledStore {
         let db = sled::open(path)?;
         let blocks = db.open_tree("blocks")?;
         let index = db.open_tree("index")?;
-        Ok(Self { db, blocks, index })
+        Ok(Self { blocks, index })
     }
 
     fn decode(v: IVec) -> Arc<Block> {
