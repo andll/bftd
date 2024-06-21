@@ -18,16 +18,16 @@ macro_rules! histogram (
 
 impl Metrics {
     pub fn new() -> Arc<Self> {
-        Self::new_in_registry(Registry::default())
+        Self::new_in_registry(&Registry::default())
     }
 
-    pub fn new_in_registry(registry: Registry) -> Arc<Self> {
+    pub fn new_in_registry(registry: &Registry) -> Arc<Self> {
         Arc::new(Self {
-            core_last_proposed_round: gauge!("core_last_proposed_round", &registry),
+            core_last_proposed_round: gauge!("core_last_proposed_round", registry),
             syncer_received_block_age_ms: histogram!(
                 "syncer_received_block_age_ms",
                 exponential_buckets(1., 2., 14),
-                &registry
+                registry
             ),
         })
     }

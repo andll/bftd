@@ -17,7 +17,12 @@ pub struct TestCluster {
 }
 
 impl TestCluster {
-    pub fn generate(name: &str, peer_addresses: Vec<SocketAddr>, bind: Option<String>) -> Self {
+    pub fn generate(
+        name: &str,
+        peer_addresses: Vec<SocketAddr>,
+        bind: Option<String>,
+        prometheus_bind: Option<SocketAddr>,
+    ) -> Self {
         let mut rng = ThreadRng::default();
         let (protocol_private_keys, protocol_public_keys): (Vec<_>, Vec<_>) = peer_addresses
             .iter()
@@ -33,6 +38,7 @@ impl TestCluster {
             let config = BftdConfig {
                 bind: bind.clone(),
                 validator_index,
+                prometheus_bind,
             };
             configs.push(config);
         }

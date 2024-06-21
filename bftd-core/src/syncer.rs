@@ -16,7 +16,7 @@ use std::future::Future;
 use std::ops::Add;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 use tokio::select;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
@@ -50,6 +50,12 @@ struct SyncerInner<B> {
 
 pub trait Clock: Send + 'static {
     fn time_ns(&self) -> u64;
+}
+
+#[derive(Clone)]
+pub struct SystemTimeClock {
+    start: std::time::Instant,
+    start_timestamp: u64,
 }
 
 impl Syncer {
@@ -405,4 +411,26 @@ enum RpcResponse {
 #[derive(Serialize, Deserialize)]
 enum StreamRpcResponse {
     Block(Bytes),
+}
+
+impl SystemTimeClock {
+    pub fn new() -> Self {
+        let start = std::time::Instant::now();
+        let start_timestamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos() as u64;
+        Self {
+            start,
+            start_timestamp,
+        }
+    }
+}
+
+impl Clock for SystemTimeClock {
+    fn time_ns(&self) -> u64 {
+        // little trick to avoid syscall every time we want to get timestamp
+        // todo - synchronize with actual time sometimes?
+        self.start_timestamp + self.start.elapsed().as_nanos() as u64
+    }
 }

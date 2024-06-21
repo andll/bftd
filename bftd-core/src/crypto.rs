@@ -18,7 +18,7 @@ pub trait Hasher {
 
 pub struct Blake2Hasher;
 
-pub struct Ed25519Signer(SigningKey);
+pub struct Ed25519Signer(Box<SigningKey>);
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Ed25519Verifier(VerificationKey);
 
@@ -28,7 +28,7 @@ pub fn generate_validator_key_pair(
     let signing_key = SigningKey::new(rng);
     let verification_key = signing_key.verification_key();
     (
-        Ed25519Signer(signing_key),
+        Ed25519Signer(Box::new(signing_key)),
         Ed25519Verifier(verification_key),
     )
 }
@@ -41,7 +41,15 @@ impl Signer for Ed25519Signer {
 
 impl AsRef<[u8]> for Ed25519Signer {
     fn as_ref(&self) -> &[u8] {
-        self.0.as_ref()
+        (*self.0).as_ref()
+    }
+}
+
+impl TryFrom<&[u8]> for Ed25519Signer {
+    type Error = ed25519_consensus::Error;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        Ok(Self(Box::new(SigningKey::try_from(value)?)))
     }
 }
 
@@ -78,6 +86,6 @@ impl From<VerificationKey> for Ed25519Verifier {
 
 impl From<SigningKey> for Ed25519Signer {
     fn from(value: SigningKey) -> Self {
-        Self(value)
+        Self(Box::new(value))
     }
 }

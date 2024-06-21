@@ -1,3 +1,5 @@
+mod node;
+mod prometheus;
 mod test_cluster;
 
 use crate::test_cluster::TestCluster;
@@ -10,6 +12,7 @@ use std::{fs, process};
 #[derive(Parser, Debug)]
 enum Args {
     NewChain(NewChainArgs),
+    LocalCluster(LocalClusterArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -18,6 +21,13 @@ struct NewChainArgs {
     peer_addresses: Vec<SocketAddr>,
     #[arg(long, short = 'b')]
     bind: Option<String>,
+    #[arg(long, short = 'p')]
+    prometheus_bind: Option<SocketAddr>,
+}
+
+#[derive(Parser, Debug)]
+struct LocalClusterArgs {
+    name: String,
 }
 
 fn main() {
@@ -30,25 +40,37 @@ fn main() {
 
 fn handle_args(args: Args) -> anyhow::Result<()> {
     match args {
-        Args::NewChain(new_chain) => handle_new_chain(new_chain),
+        Args::NewChain(args) => handle_new_chain(args),
+        Args::LocalCluster(args) => handle_local_cluster(args),
     }
 }
-fn handle_new_chain(new_chain: NewChainArgs) -> anyhow::Result<()> {
+fn handle_new_chain(args: NewChainArgs) -> anyhow::Result<()> {
     let clusters_path = PathBuf::from("clusters");
     fs::create_dir_all(&clusters_path)?;
-    let path = clusters_path.join(&new_chain.name);
+    let path = clusters_path.join(&args.name);
     if let Err(err) = fs::create_dir(&path) {
         bail!("Failed to create cluster directory at {path:?}: {err}");
     }
     println!("Generating new chain");
-    println!("Name: {}", new_chain.name);
-    println!("Peers: {:?}", new_chain.peer_addresses);
-    if new_chain.peer_addresses.len() < 4 {
+    println!("Name: {}", args.name);
+    println!("Peers: {:?}", args.peer_addresses);
+    if args.peer_addresses.len() < 4 {
         bail!("Chain must have at least 4 peers");
     }
-    let test_cluster =
-        TestCluster::generate(&new_chain.name, new_chain.peer_addresses, new_chain.bind);
+    let test_cluster = TestCluster::generate(
+        &args.name,
+        args.peer_addresses,
+        args.bind,
+        args.prometheus_bind,
+    );
     println!("Storing test cluster into {path:?}");
     test_cluster.store_into(&path)?;
+    Ok(())
+}
+
+fn handle_local_cluster(args: LocalClusterArgs) -> anyhow::Result<()> {
+    let clusters_path = PathBuf::from("clusters");
+    let path = clusters_path.join(&args.name);
+
     Ok(())
 }

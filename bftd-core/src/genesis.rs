@@ -1,7 +1,8 @@
 use crate::block::ChainId;
-use crate::committee::ValidatorInfo;
+use crate::committee::{Committee, ValidatorInfo};
 use crate::crypto::blake2_hash;
 use bytes::Bytes;
+use std::sync::Arc;
 
 const GENERATION_LENGTH: usize = 32;
 
@@ -50,5 +51,9 @@ impl Genesis {
 
     pub fn data(&self) -> &Bytes {
         &self.data
+    }
+
+    pub fn make_committee(&self) -> Arc<Committee> {
+        Arc::new(Committee::new(self.validators.clone()))
     }
 }

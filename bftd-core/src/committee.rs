@@ -1,6 +1,6 @@
 use crate::block::{Block, ChainId, Round, ValidatorIndex};
 use crate::crypto::{Blake2Hasher, Ed25519Verifier};
-use crate::network::NoisePublicKey;
+use crate::network::{NoisePublicKey, PeerInfo};
 use anyhow::{bail, ensure};
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
@@ -86,6 +86,10 @@ impl Committee {
         &self.validator(index).network_key
     }
 
+    pub fn network_address(&self, index: ValidatorIndex) -> &SocketAddr {
+        &self.validator(index).network_address
+    }
+
     pub fn enumerate_validators(&self) -> impl Iterator<Item = (ValidatorIndex, &ValidatorInfo)> {
         self.validators
             .iter()
@@ -113,6 +117,18 @@ impl Committee {
         let h = h.finish();
         let index = h % (self.validators.len() as u64);
         ValidatorIndex(index)
+    }
+
+    pub fn make_peers_info(&self) -> Vec<PeerInfo> {
+        self.validators
+            .iter()
+            .enumerate()
+            .map(|(index, info)| PeerInfo {
+                address: info.network_address,
+                public_key: info.network_key.clone(),
+                index: ValidatorIndex(index as u64),
+            })
+            .collect()
     }
 }
 
