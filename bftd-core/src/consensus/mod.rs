@@ -41,6 +41,7 @@ pub enum CommitDecision {
 pub struct Commit {
     index: u64,
     leader: BlockReference,
+    commit_timestamp_ns: u64,
     /// All blocks in commit, leader block is the last block in this list
     all_blocks: Vec<BlockReference>,
     commit_hash: [u8; BLOCK_HASH_LENGTH],
@@ -52,6 +53,7 @@ impl Commit {
         Self {
             index,
             leader,
+            commit_timestamp_ns: 0,
             all_blocks,
             commit_hash: Default::default(),
         }
@@ -60,12 +62,14 @@ impl Commit {
         previous: Option<&Commit>,
         index: u64,
         leader: BlockReference,
+        commit_timestamp_ns: u64,
         all_blocks: Vec<BlockReference>,
     ) -> Self {
         let mut previous_hash = [0u8; BLOCK_HASH_LENGTH];
         if let Some(previous) = previous {
             previous_hash = previous.commit_hash;
             assert_eq!(index, previous.index + 1);
+            assert!(commit_timestamp_ns >= previous.commit_timestamp_ns);
         } else {
             assert_eq!(index, 0);
         }
@@ -74,6 +78,8 @@ impl Commit {
         let mut commit_hash = Blake2b::new();
         commit_hash.update(&previous_hash);
         commit_hash.update(&index.to_be_bytes());
+        // do not hash commit.leader (included as part of all_blocks)
+        commit_hash.update(&commit_timestamp_ns.to_be_bytes());
         commit_hash.update(&(all_blocks.len() as u64).to_be_bytes());
         for block in all_blocks.iter() {
             commit_hash.update(&block.round_author_hash_encoding());
@@ -82,6 +88,7 @@ impl Commit {
         Self {
             index,
             leader,
+            commit_timestamp_ns,
             all_blocks,
             commit_hash,
         }
@@ -97,6 +104,10 @@ impl Commit {
 
     pub fn leader(&self) -> &BlockReference {
         &self.leader
+    }
+
+    pub fn commit_timestamp_ns(&self) -> u64 {
+        self.commit_timestamp_ns
     }
 
     pub fn all_blocks(&self) -> &[BlockReference] {

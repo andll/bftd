@@ -168,6 +168,7 @@ struct JsonBlock<'a> {
 struct JsonCommit {
     index: u64,
     leader: String,
+    commit_timestamp_ns: u64,
     /// All blocks in commit, leader block is the last block in this list
     all_blocks: Vec<String>,
     commit_hash: String,
@@ -191,6 +192,7 @@ impl JsonCommit {
         Self {
             index: commit.index(),
             leader: format_block_reference(commit.leader()),
+            commit_timestamp_ns: commit.commit_timestamp_ns(),
             all_blocks: commit
                 .all_blocks()
                 .iter()

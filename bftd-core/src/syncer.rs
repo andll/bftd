@@ -14,6 +14,7 @@ use anyhow::bail;
 use bytes::Bytes;
 use futures::FutureExt;
 use serde::{Deserialize, Serialize};
+use std::cmp;
 use std::future::Future;
 use std::ops::Add;
 use std::pin::Pin;
@@ -271,10 +272,17 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
             .unwrap_or_default();
         let interpreter = CommitInterpreter::new(&self.block_store);
         let all_blocks = interpreter.interpret_commit(index, leader.clone());
+        let previous_timestamp_ns = self
+            .last_commit
+            .as_ref()
+            .map(Commit::commit_timestamp_ns)
+            .unwrap_or_default();
+        let commit_timestamp_ns = cmp::max(leader.time_ns(), previous_timestamp_ns);
         let commit = Commit::new(
             self.last_commit.as_ref(),
             index,
             *leader.reference(),
+            commit_timestamp_ns,
             all_blocks,
         );
         self.block_store.store_commit(&commit);
