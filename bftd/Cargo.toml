@@ -17,3 +17,5 @@ futures = "0.3.30"
 tracing-subscriber = { version = "0.3.18",features = ["env-filter"] }
 bytes = { version = "1.6.0", features = ["serde"] }
 hex = "0.4.3"
+mime = "0.3.17"
+serde = { version = "1.0.203", features = ["derive"] }

@@ -1,14 +1,17 @@
 use axum::extract::{DefaultBodyLimit, Path, State};
-use axum::http::StatusCode;
+use axum::http::header::ACCEPT;
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use bftd_core::block::{BlockHash, BlockReference, Round, ValidatorIndex};
+use bftd_core::block::{Block, BlockHash, BlockReference, ChainId, Round, ValidatorIndex};
 use bftd_core::block_manager::BlockStore;
 use bftd_core::consensus::Commit;
-use bftd_core::mempool::{BasicMempoolClient, MAX_TRANSACTION};
+use bftd_core::mempool::{BasicMempoolClient, TransactionsPayloadReader, MAX_TRANSACTION};
 use bftd_core::store::CommitStore;
 use bftd_core::syncer::Syncer;
 use bytes::Bytes;
+use serde::Serialize;
 use std::future::IntoFuture;
 use std::io;
 use std::net::SocketAddr;
@@ -69,19 +72,37 @@ type HttpResult<T> = Result<T, (StatusCode, &'static str)>;
 impl<B: BlockStore + CommitStore> BftdServerState<B> {
     async fn get_block(
         State(state): State<Arc<Self>>,
+        headers: HeaderMap,
         Path(round): Path<u64>,
         Path(author): Path<u64>,
         Path(hash): Path<String>,
-    ) -> HttpResult<Bytes> {
+    ) -> HttpResult<Response> {
         let block_reference = BlockReference {
             round: Round(round),
             author: ValidatorIndex(author),
             hash: parse_block_hash(&hash)?,
         };
+        let Some(accept) = headers.get(ACCEPT) else {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "Use Accept header(application/json or application/octet-stream)",
+            ));
+        };
         let Some(block) = state.block_store.get(&block_reference) else {
             return Err((StatusCode::NOT_FOUND, "Block not found"));
         };
-        Ok(block.data().clone())
+        let accept = accept.to_str().map_err(|_| ());
+        if accept.eq(&Ok(mime::APPLICATION_JSON.as_ref())) {
+            // panic here is prevented by using TransactionsPayloadBlockFilter when running cluster
+            let payload_reader = TransactionsPayloadReader::new_verify(block.payload_bytes())
+                .expect("Local block has invalid payload");
+            let block = JsonBlock::from_block(&block, &payload_reader);
+            Ok(Json(block).into_response())
+        } else if accept.eq(&Ok(mime::APPLICATION_OCTET_STREAM.as_ref())) {
+            Ok(block.data().clone().into_response())
+        } else {
+            return Err((StatusCode::BAD_REQUEST, "Unsupported Accept value"));
+        }
     }
 
     async fn get_commit(
@@ -132,6 +153,29 @@ impl<B: BlockStore + CommitStore> BftdServerState<B> {
             StatusCode::OK
         } else {
             StatusCode::SERVICE_UNAVAILABLE
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct JsonBlock<'a> {
+    reference: &'a BlockReference,
+    signature: &'a [u8],
+    chain_id: &'a ChainId,
+    time_ns: u64, // todo verify
+    parents: &'a [BlockReference],
+    transactions: Vec<&'a [u8]>,
+}
+
+impl<'a> JsonBlock<'a> {
+    pub fn from_block(block: &'a Block, payload_reader: &'a TransactionsPayloadReader) -> Self {
+        Self {
+            reference: block.reference(),
+            signature: &block.signature().0,
+            chain_id: block.chain_id(),
+            time_ns: block.time_ns(),
+            parents: block.parents(),
+            transactions: payload_reader.iter_slices().collect(),
         }
     }
 }

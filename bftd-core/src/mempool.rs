@@ -133,14 +133,27 @@ impl TransactionsPayloadReader {
         self.offsets.len()
     }
 
-    pub fn get(&self, index: usize) -> Option<Bytes> {
+    pub fn get_bytes(&self, index: usize) -> Option<Bytes> {
         let from = *self.offsets.get(index)?;
-        let to = if index == self.offsets.len() - 1 {
+        let to = self.index_upper_bound(index);
+        Some(self.bytes.slice(from..to))
+    }
+    pub fn get(&self, index: usize) -> &[u8] {
+        let from = *self.offsets.get(index).unwrap();
+        let to = self.index_upper_bound(index);
+        &self.bytes[from..to]
+    }
+
+    fn index_upper_bound(&self, index: usize) -> usize {
+        if index == self.offsets.len() - 1 {
             self.bytes.len()
         } else {
             *self.offsets.get(index + 1).unwrap()
-        };
-        Some(self.bytes.slice(from..to))
+        }
+    }
+
+    pub fn iter_slices(&self) -> impl Iterator<Item = &[u8]> {
+        (0..self.len()).map(|i| self.get(i))
     }
 }
 
@@ -172,9 +185,9 @@ mod tests {
         let proposal = mempool.make_proposal();
         let payload = TransactionsPayloadReader::new_verify(proposal).unwrap();
         assert_eq!(payload.len(), 3);
-        assert_eq!(payload.get(0).unwrap().as_ref(), &[1, 2]);
-        assert_eq!(payload.get(1).unwrap().as_ref(), &[3, 5, 6]);
-        assert_eq!(payload.get(2).unwrap().as_ref(), &[7]);
+        assert_eq!(payload.get_bytes(0).unwrap().as_ref(), &[1, 2]);
+        assert_eq!(payload.get_bytes(1).unwrap().as_ref(), &[3, 5, 6]);
+        assert_eq!(payload.get_bytes(2).unwrap().as_ref(), &[7]);
 
         let proposal = mempool.make_proposal();
         let payload = TransactionsPayloadReader::new_verify(proposal).unwrap();
@@ -193,8 +206,8 @@ mod tests {
         let proposal = mempool.make_proposal();
         let payload = TransactionsPayloadReader::new_verify(proposal).unwrap();
         assert_eq!(payload.len(), 2);
-        assert_eq!(payload.get(0).unwrap().as_ref(), &[]);
-        assert_eq!(payload.get(1).unwrap().as_ref(), &[]);
+        assert_eq!(payload.get_bytes(0).unwrap().as_ref(), &[]);
+        assert_eq!(payload.get_bytes(1).unwrap().as_ref(), &[]);
 
         let sent = MAX_BLOCK_PAYLOAD / MAX_TRANSACTION + 2;
         assert!(sent < 0xff);
@@ -212,14 +225,14 @@ mod tests {
         let len1 = payload.len();
         for i in 0..len1 {
             let t = vec![i as u8; MAX_TRANSACTION];
-            assert_eq!(payload.get(i).unwrap().as_ref(), &t);
+            assert_eq!(payload.get_bytes(i).unwrap().as_ref(), &t);
         }
         let proposal = mempool.make_proposal();
         let payload = TransactionsPayloadReader::new_verify(proposal).unwrap();
         let len2 = payload.len();
         for i in 0..len2 {
             let t = vec![(i + len1) as u8; MAX_TRANSACTION];
-            assert_eq!(payload.get(i).unwrap().as_ref(), &t);
+            assert_eq!(payload.get_bytes(i).unwrap().as_ref(), &t);
         }
         assert_eq!(sent, len1 + len2);
     }
