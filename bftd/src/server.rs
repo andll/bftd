@@ -171,6 +171,7 @@ struct JsonCommit {
     commit_timestamp_ns: u64,
     /// All blocks in commit, leader block is the last block in this list
     all_blocks: Vec<String>,
+    previous_commit_hash: String,
     commit_hash: String,
 }
 
@@ -198,6 +199,7 @@ impl JsonCommit {
                 .iter()
                 .map(format_block_reference)
                 .collect(),
+            previous_commit_hash: format_hash(&commit.previous_commit_hash().unwrap_or_default()),
             commit_hash: format_hash(commit.commit_hash()),
         }
     }

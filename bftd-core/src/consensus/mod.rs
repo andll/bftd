@@ -44,6 +44,7 @@ pub struct Commit {
     commit_timestamp_ns: u64,
     /// All blocks in commit, leader block is the last block in this list
     all_blocks: Vec<BlockReference>,
+    previous_commit_hash: Option<[u8; BLOCK_HASH_LENGTH]>,
     commit_hash: [u8; BLOCK_HASH_LENGTH],
 }
 
@@ -55,6 +56,7 @@ impl Commit {
             leader,
             commit_timestamp_ns: 0,
             all_blocks,
+            previous_commit_hash: Default::default(),
             commit_hash: Default::default(),
         }
     }
@@ -65,18 +67,19 @@ impl Commit {
         commit_timestamp_ns: u64,
         all_blocks: Vec<BlockReference>,
     ) -> Self {
-        let mut previous_hash = [0u8; BLOCK_HASH_LENGTH];
+        let previous_commit_hash;
         if let Some(previous) = previous {
-            previous_hash = previous.commit_hash;
+            previous_commit_hash = Some(previous.commit_hash);
             assert_eq!(index, previous.index + 1);
             assert!(commit_timestamp_ns >= previous.commit_timestamp_ns);
         } else {
+            previous_commit_hash = None;
             assert_eq!(index, 0);
         }
         assert!(!all_blocks.is_empty());
         assert_eq!(all_blocks.last().unwrap(), &leader);
         let mut commit_hash = Blake2b::new();
-        commit_hash.update(&previous_hash);
+        commit_hash.update(&previous_commit_hash.unwrap_or_default());
         commit_hash.update(&index.to_be_bytes());
         // do not hash commit.leader (included as part of all_blocks)
         commit_hash.update(&commit_timestamp_ns.to_be_bytes());
@@ -90,6 +93,7 @@ impl Commit {
             leader,
             commit_timestamp_ns,
             all_blocks,
+            previous_commit_hash,
             commit_hash,
         }
     }
@@ -116,6 +120,10 @@ impl Commit {
 
     pub fn commit_hash(&self) -> &[u8; BLOCK_HASH_LENGTH] {
         &self.commit_hash
+    }
+
+    pub fn previous_commit_hash(&self) -> &Option<[u8; BLOCK_HASH_LENGTH]> {
+        &self.previous_commit_hash
     }
 }
 
