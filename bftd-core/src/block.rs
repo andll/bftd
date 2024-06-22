@@ -74,6 +74,10 @@ impl Block {
         &self.data[self.payload_offset..]
     }
 
+    pub fn payload_bytes(&self) -> Bytes {
+        self.data.slice(self.payload_offset..)
+    }
+
     pub fn data(&self) -> &Bytes {
         &self.data
     }

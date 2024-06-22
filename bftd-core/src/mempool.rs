@@ -1,7 +1,9 @@
-use crate::block::MAX_BLOCK_PAYLOAD;
+use crate::block::{Block, MAX_BLOCK_PAYLOAD};
 use crate::core::ProposalMaker;
+use crate::syncer::BlockFilter;
 use anyhow::ensure;
 use bytes::{BufMut, Bytes, BytesMut};
+use std::sync::Arc;
 use tokio::sync::mpsc;
 
 pub struct BasicMempool {
@@ -37,12 +39,15 @@ impl BasicMempoolClient {
     }
 }
 
+/// Makes sure block content can be parsed with TransactionsPayloadReader
+pub struct TransactionsPayloadBlockFilter;
+
 const PAYLOAD_HEADER_SIZE: usize = 4;
 const TRANSACTION_HEADER_SIZE: usize = 4;
 
 impl ProposalMaker for BasicMempool {
     fn make_proposal(&mut self) -> Bytes {
-        let mut payload_builder = PayloadBuilder::default();
+        let mut payload_builder = TransactionsPayloadBuilder::default();
         if let Some(transaction) = self.last_transaction.take() {
             if payload_builder.add_transaction(transaction).is_err() {
                 panic!("Should be able to add at least one transaction");
@@ -59,12 +64,12 @@ impl ProposalMaker for BasicMempool {
 }
 
 #[derive(Default)]
-struct PayloadBuilder {
+struct TransactionsPayloadBuilder {
     transactions: Vec<Vec<u8>>,
     size: usize,
 }
 
-impl PayloadBuilder {
+impl TransactionsPayloadBuilder {
     fn add_transaction(&mut self, transaction: Vec<u8>) -> Result<(), Vec<u8>> {
         let len = transaction.len() + TRANSACTION_HEADER_SIZE;
         if self.size + len <= MAX_BLOCK_PAYLOAD - PAYLOAD_HEADER_SIZE {
@@ -89,13 +94,20 @@ impl PayloadBuilder {
     }
 }
 
-pub struct PayloadReader {
+pub struct TransactionsPayloadReader {
     bytes: Bytes,
     offsets: Vec<usize>,
 }
 
-impl PayloadReader {
+impl TransactionsPayloadReader {
     pub fn new_verify(bytes: Bytes) -> anyhow::Result<Self> {
+        if bytes.len() == 0 {
+            // Accept empty payload
+            return Ok(Self {
+                bytes,
+                offsets: vec![],
+            });
+        }
         const MAX_LEN: usize = MAX_BLOCK_PAYLOAD / TRANSACTION_HEADER_SIZE;
         ensure!(bytes.len() >= PAYLOAD_HEADER_SIZE, "Payload too short");
         let len = u32::from_be_bytes(bytes[..PAYLOAD_HEADER_SIZE].try_into().unwrap()) as usize;
@@ -132,6 +144,13 @@ impl PayloadReader {
     }
 }
 
+impl BlockFilter for TransactionsPayloadBlockFilter {
+    fn check_block(&self, block: &Arc<Block>) -> anyhow::Result<()> {
+        TransactionsPayloadReader::new_verify(block.payload_bytes())?;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,14 +170,14 @@ mod tests {
         }
 
         let proposal = mempool.make_proposal();
-        let payload = PayloadReader::new_verify(proposal).unwrap();
+        let payload = TransactionsPayloadReader::new_verify(proposal).unwrap();
         assert_eq!(payload.len(), 3);
         assert_eq!(payload.get(0).unwrap().as_ref(), &[1, 2]);
         assert_eq!(payload.get(1).unwrap().as_ref(), &[3, 5, 6]);
         assert_eq!(payload.get(2).unwrap().as_ref(), &[7]);
 
         let proposal = mempool.make_proposal();
-        let payload = PayloadReader::new_verify(proposal).unwrap();
+        let payload = TransactionsPayloadReader::new_verify(proposal).unwrap();
         assert_eq!(payload.len(), 0);
 
         future::poll_immediate(client.send_transaction(vec![]))
@@ -172,7 +191,7 @@ mod tests {
             .map_err(|_| ())
             .unwrap();
         let proposal = mempool.make_proposal();
-        let payload = PayloadReader::new_verify(proposal).unwrap();
+        let payload = TransactionsPayloadReader::new_verify(proposal).unwrap();
         assert_eq!(payload.len(), 2);
         assert_eq!(payload.get(0).unwrap().as_ref(), &[]);
         assert_eq!(payload.get(1).unwrap().as_ref(), &[]);
@@ -189,14 +208,14 @@ mod tests {
         }
         let proposal = mempool.make_proposal();
         assert!(proposal.len() <= MAX_BLOCK_PAYLOAD);
-        let payload = PayloadReader::new_verify(proposal).unwrap();
+        let payload = TransactionsPayloadReader::new_verify(proposal).unwrap();
         let len1 = payload.len();
         for i in 0..len1 {
             let t = vec![i as u8; MAX_TRANSACTION];
             assert_eq!(payload.get(i).unwrap().as_ref(), &t);
         }
         let proposal = mempool.make_proposal();
-        let payload = PayloadReader::new_verify(proposal).unwrap();
+        let payload = TransactionsPayloadReader::new_verify(proposal).unwrap();
         let len2 = payload.len();
         for i in 0..len2 {
             let t = vec![(i + len1) as u8; MAX_TRANSACTION];

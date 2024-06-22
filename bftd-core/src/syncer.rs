@@ -10,6 +10,7 @@ use crate::rpc::{
     NetworkRequest, NetworkResponse, NetworkRpc, NetworkRpcRouter, PeerRpcTaskCommand, RpcResult,
 };
 use crate::store::{CommitInterpreter, CommitStore};
+use anyhow::bail;
 use bytes::Bytes;
 use futures::FutureExt;
 use serde::{Deserialize, Serialize};
@@ -45,16 +46,21 @@ struct SyncerTask<S, B, C, P> {
     last_commit_sender: watch::Sender<Option<u64>>,
 }
 
-struct SyncerInner<B> {
+struct SyncerInner<B, F> {
     block_store: B,
     last_proposed_round_receiver: watch::Receiver<Round>,
     validator_index: ValidatorIndex,
     committee: Arc<Committee>,
     blocks_sender: mpsc::Sender<Arc<Block>>,
+    block_filter: F,
 }
 
 pub trait Clock: Send + 'static {
     fn time_ns(&self) -> u64;
+}
+
+pub trait BlockFilter: Send + Sync + 'static {
+    fn check_block(&self, block: &Arc<Block>) -> anyhow::Result<()>;
 }
 
 #[derive(Clone)]
@@ -69,12 +75,14 @@ impl Syncer {
         B: BlockStore + CommitStore + Clone,
         C: Clock + Clone,
         P: ProposalMaker,
+        F: BlockFilter,
     >(
         core: Core<S, B>,
         block_store: B,
         pool: ConnectionPool,
         clock: C,
         proposer: P,
+        block_filter: F,
     ) -> Self {
         let committee = core.committee().clone();
         let metrics = core.metrics().clone();
@@ -92,6 +100,7 @@ impl Syncer {
             validator_index,
             blocks_sender,
             committee: committee.clone(),
+            block_filter,
         });
         let peer_routers = committee
             .enumerate_validators()
@@ -306,13 +315,13 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
     }
 }
 
-struct PeerRouter<B, C> {
-    inner: Arc<SyncerInner<B>>,
+struct PeerRouter<B, C, F> {
+    inner: Arc<SyncerInner<B, F>>,
     peer_index: ValidatorIndex,
     clock: C,
 }
 
-impl<B: BlockStore, C: Clock + Clone> PeerRouter<B, C> {
+impl<B: BlockStore, C: Clock + Clone, F: BlockFilter> PeerRouter<B, C, F> {
     fn stream_rpc(
         &mut self,
         req: NetworkRequest,
@@ -348,7 +357,7 @@ impl<B: BlockStore, C: Clock + Clone> PeerRouter<B, C> {
     }
 
     async fn stream_task(
-        inner: Arc<SyncerInner<B>>,
+        inner: Arc<SyncerInner<B, F>>,
         sender: mpsc::Sender<NetworkResponse>,
         mut last_sent: Round,
         peer_index: ValidatorIndex,
@@ -387,16 +396,14 @@ impl<B: BlockStore, C: Clock + Clone> PeerRouter<B, C> {
     async fn receive_subscription_inner(
         peer: ValidatorIndex,
         mut receiver: mpsc::Receiver<RpcResult<NetworkResponse>>,
-        block_sender: mpsc::Sender<Arc<Block>>,
-        committee: Arc<Committee>,
+        inner: Arc<SyncerInner<B, F>>,
     ) -> anyhow::Result<()> {
         while let Some(block) = receiver.recv().await {
             let block = block?;
             let block = bincode::deserialize::<StreamRpcResponse>(&block.0)?;
             let StreamRpcResponse::Block(block) = block;
-            let block = committee.verify_block(block, Some(peer))?;
-            let block = Arc::new(block);
-            if block_sender.send(block).await.is_err() {
+            let block = inner.parse_verify_block(block, Some(peer))?;
+            if inner.blocks_sender.send(block).await.is_err() {
                 break;
             }
         }
@@ -406,18 +413,33 @@ impl<B: BlockStore, C: Clock + Clone> PeerRouter<B, C> {
     async fn receive_subscription(
         peer: ValidatorIndex,
         receiver: mpsc::Receiver<RpcResult<NetworkResponse>>,
-        block_sender: mpsc::Sender<Arc<Block>>,
-        committee: Arc<Committee>,
+        inner: Arc<SyncerInner<B, F>>,
     ) {
-        if let Err(err) =
-            Self::receive_subscription_inner(peer, receiver, block_sender, committee).await
-        {
+        if let Err(err) = Self::receive_subscription_inner(peer, receiver, inner).await {
             tracing::warn!("Error receiving stream from {peer}: {err}");
         }
     }
 }
 
-impl<B: BlockStore, C: Clock + Clone> NetworkRpcRouter for PeerRouter<B, C> {
+impl<B, F: BlockFilter> SyncerInner<B, F> {
+    fn parse_verify_block(
+        &self,
+        data: Bytes,
+        expected_author: Option<ValidatorIndex>,
+    ) -> anyhow::Result<Arc<Block>> {
+        let block = self.committee.verify_block(data, expected_author)?;
+        let block = Arc::new(block);
+        if let Err(err) = self.block_filter.check_block(&block) {
+            bail!(
+                "Block filter verification failed for block {}: {err}",
+                block.reference()
+            );
+        }
+        Ok(block)
+    }
+}
+
+impl<B: BlockStore, C: Clock + Clone, F: BlockFilter> NetworkRpcRouter for PeerRouter<B, C, F> {
     fn rpc(&mut self, req: NetworkRequest) -> NetworkResponse {
         self.rpc(req).unwrap() // todo handle error
     }
@@ -435,8 +457,7 @@ impl<B: BlockStore, C: Clock + Clone> NetworkRpcRouter for PeerRouter<B, C> {
         tokio::spawn(Self::receive_subscription(
             self.peer_index,
             receiver,
-            self.inner.blocks_sender.clone(),
-            self.inner.committee.clone(),
+            self.inner.clone(),
         ));
         Some(PeerRpcTaskCommand::StreamRpc(
             NetworkRequest(request.into()),
@@ -484,5 +505,11 @@ impl Clock for SystemTimeClock {
         // little trick to avoid syscall every time we want to get timestamp
         // todo - synchronize with actual time sometimes?
         self.start_timestamp + self.start.elapsed().as_nanos() as u64
+    }
+}
+
+impl BlockFilter for () {
+    fn check_block(&self, _block: &Arc<Block>) -> anyhow::Result<()> {
+        Ok(())
     }
 }

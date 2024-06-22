@@ -3,6 +3,7 @@ use bftd_core::config::BftdConfig;
 use bftd_core::core::Core;
 use bftd_core::crypto::Ed25519Signer;
 use bftd_core::genesis::Genesis;
+use bftd_core::mempool::TransactionsPayloadBlockFilter;
 use bftd_core::metrics::Metrics;
 use bftd_core::network::{ConnectionPool, NoisePrivateKey};
 use bftd_core::store::SledStore;
@@ -99,7 +100,14 @@ impl Node {
             metrics,
         );
         let clock = SystemTimeClock::new();
-        let syncer = Syncer::start(core, block_store, pool, clock, ());
+        let syncer = Syncer::start(
+            core,
+            block_store,
+            pool,
+            clock,
+            (),
+            TransactionsPayloadBlockFilter,
+        );
 
         Ok(NodeHandle {
             syncer,
