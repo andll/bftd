@@ -24,6 +24,7 @@ impl TestCluster {
         peer_addresses: Vec<SocketAddr>,
         bind: Option<String>,
         prometheus_bind: Option<SocketAddr>,
+        http_server_bind: Option<SocketAddr>,
     ) -> Self {
         let mut rng = ThreadRng::default();
         let (protocol_private_keys, protocol_public_keys): (Vec<_>, Vec<_>) = peer_addresses
@@ -41,6 +42,7 @@ impl TestCluster {
                 bind: bind.clone(),
                 validator_index,
                 prometheus_bind,
+                http_server_bind,
             };
             configs.push(config);
         }

@@ -26,6 +26,8 @@ struct NewChainArgs {
     bind: Option<String>,
     #[arg(long, short = 'p')]
     prometheus_bind: Option<SocketAddr>,
+    #[arg(long, short = 's')]
+    http_server_bind: Option<SocketAddr>,
 }
 
 #[derive(Parser, Debug)]
@@ -69,6 +71,7 @@ fn handle_new_chain(args: NewChainArgs) -> anyhow::Result<()> {
         args.peer_addresses,
         args.bind,
         args.prometheus_bind,
+        args.http_server_bind,
     );
     println!("Storing test cluster into {path:?}");
     test_cluster.store_into(&path)?;

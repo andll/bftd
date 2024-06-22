@@ -233,8 +233,8 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                             }
                         }
                     }
-                    if (committed % 10 == 0 && committed > 0) || (skipped % 10 == 0 && skipped > 0) {
-                        println!("stat: committed {}, skipped {}", committed, skipped);
+                    if (committed % 100 == 0 && committed > 0) || (skipped % 100 == 0 && skipped > 0) {
+                        log::info!("stat: committed {}, skipped {}", committed, skipped);
                     }
                 }
                 _ = &mut proposal_deadline => {
@@ -278,7 +278,7 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
             all_blocks,
         );
         self.block_store.store_commit(&commit);
-        tracing::debug!("Committed {}", commit);
+        tracing::info!("Committed {}", commit);
         self.last_commit_sender.send(Some(commit.index())).ok();
         self.last_commit = Some(commit);
     }

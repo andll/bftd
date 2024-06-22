@@ -5,7 +5,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use bftd_core::block::{Block, BlockHash, BlockReference, ChainId, Round, ValidatorIndex};
+use bftd_core::block::{Block, BlockHash, BlockReference, Round, ValidatorIndex};
 use bftd_core::block_manager::BlockStore;
 use bftd_core::consensus::Commit;
 use bftd_core::store::CommitStore;
@@ -41,10 +41,10 @@ impl BftdServer {
         let app = Router::new()
             .route("/send", post(BftdServerState::send))
             .route(
-                "/block/:round/:author/:hash",
+                "/blocks/:round/:author/:hash",
                 get(BftdServerState::get_block),
             )
-            .route("/commit/:index", get(BftdServerState::get_commit))
+            .route("/commits/:index", get(BftdServerState::get_commit))
             .with_state(state)
             // todo - check if MAX_TRANSACTION is allowed or need +1
             .layer(DefaultBodyLimit::max(MAX_TRANSACTION));
@@ -73,9 +73,7 @@ impl<B: BlockStore + CommitStore> BftdServerState<B> {
     async fn get_block(
         State(state): State<Arc<Self>>,
         headers: HeaderMap,
-        Path(round): Path<u64>,
-        Path(author): Path<u64>,
-        Path(hash): Path<String>,
+        Path((round, author, hash)): Path<(u64, u64, String)>,
     ) -> HttpResult<Response> {
         let block_reference = BlockReference {
             round: Round(round),
@@ -108,7 +106,7 @@ impl<B: BlockStore + CommitStore> BftdServerState<B> {
     async fn get_commit(
         State(state): State<Arc<Self>>,
         Path(index): Path<u64>,
-    ) -> HttpResult<Json<Commit>> {
+    ) -> HttpResult<Json<JsonCommit>> {
         let lag = index.saturating_sub(
             state
                 .syncer
@@ -136,7 +134,7 @@ impl<B: BlockStore + CommitStore> BftdServerState<B> {
         let Some(commit) = state.block_store.get_commit(index) else {
             return Err((StatusCode::NOT_FOUND, "Commit not found"));
         };
-        Ok(Json(commit))
+        Ok(Json(JsonCommit::from_commit(&commit)))
     }
 
     async fn send(State(state): State<Arc<Self>>, body: Bytes) -> StatusCode {
@@ -159,25 +157,61 @@ impl<B: BlockStore + CommitStore> BftdServerState<B> {
 
 #[derive(Serialize)]
 struct JsonBlock<'a> {
-    reference: &'a BlockReference,
-    signature: &'a [u8],
-    chain_id: &'a ChainId,
-    time_ns: u64, // todo verify
-    parents: &'a [BlockReference],
+    reference: String,
+    signature: String,
+    chain_id: String,
+    time_ns: u64,
+    parents: Vec<String>,
     transactions: Vec<&'a [u8]>,
+}
+#[derive(Serialize)]
+struct JsonCommit {
+    index: u64,
+    leader: String,
+    /// All blocks in commit, leader block is the last block in this list
+    all_blocks: Vec<String>,
+    commit_hash: String,
 }
 
 impl<'a> JsonBlock<'a> {
     pub fn from_block(block: &'a Block, payload_reader: &'a TransactionsPayloadReader) -> Self {
         Self {
-            reference: block.reference(),
-            signature: &block.signature().0,
-            chain_id: block.chain_id(),
+            reference: format_block_reference(block.reference()),
+            signature: hex::encode(&block.signature().0),
+            chain_id: format_hash(&block.chain_id().0),
             time_ns: block.time_ns(),
-            parents: block.parents(),
+            parents: block.parents().iter().map(format_block_reference).collect(),
             transactions: payload_reader.iter_slices().collect(),
         }
     }
+}
+
+impl JsonCommit {
+    pub fn from_commit(commit: &Commit) -> Self {
+        Self {
+            index: commit.index(),
+            leader: format_block_reference(commit.leader()),
+            all_blocks: commit
+                .all_blocks()
+                .iter()
+                .map(format_block_reference)
+                .collect(),
+            commit_hash: format_hash(commit.commit_hash()),
+        }
+    }
+}
+
+fn format_block_reference(r: &BlockReference) -> String {
+    format!(
+        "{:0>6}/{:0>6}/{}",
+        r.round.0,
+        r.author.0,
+        format_hash(&r.hash.0)
+    )
+}
+
+fn format_hash(hash: &[u8]) -> String {
+    hex::encode(hash)
 }
 
 fn parse_block_hash(h: &str) -> HttpResult<BlockHash> {

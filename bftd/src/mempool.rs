@@ -82,6 +82,9 @@ impl TransactionsPayloadBuilder {
     }
 
     pub fn into_payload(self) -> Bytes {
+        if self.transactions.is_empty() {
+            return Bytes::new();
+        }
         let mut payload = BytesMut::with_capacity(self.size + PAYLOAD_HEADER_SIZE);
         payload.put_u32(self.transactions.len() as u32);
         for transaction in &self.transactions {

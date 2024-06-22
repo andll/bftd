@@ -102,6 +102,10 @@ impl Commit {
     pub fn all_blocks(&self) -> &[BlockReference] {
         &self.all_blocks
     }
+
+    pub fn commit_hash(&self) -> &[u8; BLOCK_HASH_LENGTH] {
+        &self.commit_hash
+    }
 }
 
 impl CommitDecision {

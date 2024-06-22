@@ -1,5 +1,6 @@
-use crate::mempool::TransactionsPayloadBlockFilter;
+use crate::mempool::{BasicMempool, TransactionsPayloadBlockFilter};
 use crate::prometheus::{start_prometheus_server, PrometheusJoinHandle};
+use crate::server::BftdServer;
 use bftd_core::config::BftdConfig;
 use bftd_core::core::Core;
 use bftd_core::crypto::Ed25519Signer;
@@ -27,8 +28,9 @@ pub struct Node {
 
 #[allow(dead_code)]
 pub struct NodeHandle {
-    syncer: Syncer,
+    syncer: Arc<Syncer>,
     prometheus_handle: Option<PrometheusJoinHandle>,
+    server_handle: Option<BftdServer>,
     runtime: Arc<Runtime>,
 }
 
@@ -100,19 +102,35 @@ impl Node {
             metrics,
         );
         let clock = SystemTimeClock::new();
+        let (proposer, mempool_client) = BasicMempool::new();
         let syncer = Syncer::start(
             core,
-            block_store,
+            block_store.clone(),
             pool,
             clock,
-            (),
+            proposer,
             TransactionsPayloadBlockFilter,
         );
 
+        let syncer = Arc::new(syncer);
+        let server_handle = if let Some(http_server_bind) = self.config.http_server_bind {
+            Some(
+                BftdServer::start(
+                    http_server_bind,
+                    mempool_client,
+                    block_store,
+                    syncer.clone(),
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
         Ok(NodeHandle {
             syncer,
             prometheus_handle,
             runtime,
+            server_handle,
         })
     }
 }

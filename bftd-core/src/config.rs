@@ -7,4 +7,5 @@ pub struct BftdConfig {
     pub bind: Option<String>,
     pub validator_index: ValidatorIndex,
     pub prometheus_bind: Option<SocketAddr>,
+    pub http_server_bind: Option<SocketAddr>,
 }
