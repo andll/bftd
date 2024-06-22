@@ -7,7 +7,7 @@ use crate::committee::Committee;
 use crate::consensus::base_committer::BaseCommitterOptions;
 use std::{collections::VecDeque, sync::Arc};
 
-use super::{base_committer::BaseCommitter, DecidedCommit, LeaderStatus, DEFAULT_WAVE_LENGTH};
+use super::{base_committer::BaseCommitter, CommitDecision, LeaderStatus, DEFAULT_WAVE_LENGTH};
 
 /// A universal committer uses a collection of committers to commit a sequence of leaders.
 /// It can be configured to use a combination of different commit strategies, including
@@ -25,7 +25,7 @@ impl<B: BlockStore> UniversalCommitter<B> {
         &self,
         last_decided: AuthorRound,
         highest_known_round: Round,
-    ) -> Vec<DecidedCommit> {
+    ) -> Vec<CommitDecision> {
         // Try to decide as many leaders as possible, starting with the highest round.
         let mut leaders = VecDeque::new();
         // try to commit a leader up to the highest_known_round - 2. There is no reason to try and

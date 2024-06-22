@@ -1,7 +1,7 @@
 use crate::block::{AuthorRound, Block, BlockReference, Round, ValidatorIndex};
 use crate::block_manager::BlockStore;
 use crate::committee::Committee;
-use crate::consensus::{DecidedCommit, UniversalCommitter, UniversalCommitterBuilder};
+use crate::consensus::{CommitDecision, UniversalCommitter, UniversalCommitterBuilder};
 use crate::core::Core;
 use crate::crypto::Signer;
 use crate::metrics::Metrics;
@@ -184,11 +184,11 @@ impl<S: Signer, B: BlockStore + Clone, C: Clock> SyncerTask<S, B, C> {
                     for c in commits {
                         self.last_decided = c.author_round();
                         match c  {
-                            DecidedCommit::Commit(c) => {
+                            CommitDecision::Commit(c) => {
                                 tracing::debug!("Committed {}", c.reference());
                                 committed += 1;
                             },
-                            DecidedCommit::Skip(author_round) => {
+                            CommitDecision::Skip(author_round) => {
                                 tracing::debug!("Skipping commit at {}", author_round);
                                 skipped += 1;
                             }

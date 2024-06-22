@@ -1,5 +1,6 @@
 use crate::block::{Block, BlockReference, Round, ValidatorIndex};
 use crate::block_manager::BlockStore;
+use crate::consensus::Commit;
 use sled::{IVec, Tree};
 use std::io;
 use std::path::Path;
@@ -8,6 +9,13 @@ use std::sync::Arc;
 pub struct SledStore {
     blocks: Tree,
     index: Tree,
+    commits: Tree,
+}
+
+pub trait CommitStore: Send + 'static {
+    fn store_commit(&self, commit: &Commit);
+
+    fn last_commit(&self) -> Option<Commit>;
 }
 
 impl SledStore {
@@ -15,7 +23,12 @@ impl SledStore {
         let db = sled::open(path)?;
         let blocks = db.open_tree("blocks")?;
         let index = db.open_tree("index")?;
-        Ok(Self { blocks, index })
+        let commits = db.open_tree("commits")?;
+        Ok(Self {
+            blocks,
+            index,
+            commits,
+        })
     }
 
     fn decode(v: IVec) -> Arc<Block> {
@@ -148,6 +161,23 @@ impl BlockStore for SledStore {
     }
 }
 
+impl CommitStore for SledStore {
+    fn store_commit(&self, commit: &Commit) {
+        let key = commit.index.to_be_bytes();
+        let commit = bincode::serialize(commit).expect("Serialization failed");
+        self.commits
+            .insert(&key, commit)
+            .expect("Storage operation failed");
+    }
+
+    fn last_commit(&self) -> Option<Commit> {
+        let (_, commit) = self.commits.last().expect("Storage operation failed")?;
+        let commit = bincode::deserialize(commit.as_ref())
+            .expect("Deserializing commit from storage failed");
+        Some(commit)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,5 +231,22 @@ mod tests {
 
         let r = store.get_blocks_at_author_round(ValidatorIndex(1), Round(5));
         assert_eq!(r.len(), 0);
+    }
+
+    #[test]
+    fn sled_commit_store_test() {
+        let dir = TempDir::new("sled_store_test").unwrap();
+        let store = SledStore::open(dir).unwrap();
+        store.store_commit(&c(0, br(1, 1)));
+        let last = c(1, br(2, 1));
+        store.store_commit(&last);
+        assert_eq!(store.last_commit(), Some(last))
+    }
+
+    fn c(i: u64, r: BlockReference) -> Commit {
+        Commit {
+            index: i,
+            leader: r,
+        }
     }
 }

@@ -1,7 +1,8 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::block::{format_author_round, AuthorRound, Block, Round};
+use crate::block::{format_author_round, AuthorRound, Block, BlockReference, Round};
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::sync::Arc;
 
@@ -28,22 +29,24 @@ enum LeaderStatus {
 }
 
 #[derive(Clone)]
-pub enum DecidedCommit {
+pub enum CommitDecision {
     Commit(Arc<Block>),
     Skip(AuthorRound),
 }
 
-impl DecidedCommit {
-    pub(crate) fn author_round(&self) -> AuthorRound {
-        match self {
-            DecidedCommit::Commit(block) => block.author_round(),
-            DecidedCommit::Skip(author_round) => *author_round,
-        }
-    }
+#[derive(Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd)]
+pub struct Commit {
+    pub index: u64,
+    pub leader: BlockReference,
 }
 
-pub trait CommitStore {
-    fn commit_leader(&self, leader_status: DecidedCommit);
+impl CommitDecision {
+    pub(crate) fn author_round(&self) -> AuthorRound {
+        match self {
+            CommitDecision::Commit(block) => block.author_round(),
+            CommitDecision::Skip(author_round) => *author_round,
+        }
+    }
 }
 
 impl LeaderStatus {
@@ -55,10 +58,10 @@ impl LeaderStatus {
         }
     }
 
-    pub fn into_decided(self) -> Option<DecidedCommit> {
+    pub fn into_decided(self) -> Option<CommitDecision> {
         match self {
-            LeaderStatus::Commit(block) => Some(DecidedCommit::Commit(block)),
-            LeaderStatus::Skip(skip) => Some(DecidedCommit::Skip(skip)),
+            LeaderStatus::Commit(block) => Some(CommitDecision::Commit(block)),
+            LeaderStatus::Skip(skip) => Some(CommitDecision::Skip(skip)),
             LeaderStatus::Undecided(_) => None,
         }
     }
@@ -87,5 +90,16 @@ impl fmt::Display for LeaderStatus {
                 format_author_round(leader.author, leader.round)
             ),
         }
+    }
+}
+
+impl fmt::Debug for Commit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+impl fmt::Display for Commit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "<Commit @{} {}>", self.index, self.leader)
     }
 }
