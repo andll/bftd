@@ -40,6 +40,12 @@ pub struct Commit {
     pub leader: BlockReference,
 }
 
+impl Commit {
+    pub fn author_round(&self) -> AuthorRound {
+        self.leader.author_round()
+    }
+}
+
 impl CommitDecision {
     pub(crate) fn author_round(&self) -> AuthorRound {
         match self {

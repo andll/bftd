@@ -3,6 +3,7 @@ use crate::block_manager::BlockStore;
 use crate::consensus::Commit;
 use sled::{IVec, Tree};
 use std::io;
+use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -12,7 +13,7 @@ pub struct SledStore {
     commits: Tree,
 }
 
-pub trait CommitStore: Send + 'static {
+pub trait CommitStore: Send + Sync + 'static {
     fn store_commit(&self, commit: &Commit);
 
     fn last_commit(&self) -> Option<Commit>;
@@ -175,6 +176,16 @@ impl CommitStore for SledStore {
         let commit = bincode::deserialize(commit.as_ref())
             .expect("Deserializing commit from storage failed");
         Some(commit)
+    }
+}
+
+impl<T: CommitStore> CommitStore for Arc<T> {
+    fn store_commit(&self, commit: &Commit) {
+        self.deref().store_commit(commit)
+    }
+
+    fn last_commit(&self) -> Option<Commit> {
+        self.deref().last_commit()
     }
 }
 

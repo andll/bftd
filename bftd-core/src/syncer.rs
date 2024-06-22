@@ -1,7 +1,7 @@
 use crate::block::{AuthorRound, Block, BlockReference, Round, ValidatorIndex};
 use crate::block_manager::BlockStore;
 use crate::committee::Committee;
-use crate::consensus::{CommitDecision, UniversalCommitter, UniversalCommitterBuilder};
+use crate::consensus::{Commit, CommitDecision, UniversalCommitter, UniversalCommitterBuilder};
 use crate::core::Core;
 use crate::crypto::Signer;
 use crate::metrics::Metrics;
@@ -9,6 +9,7 @@ use crate::network::ConnectionPool;
 use crate::rpc::{
     NetworkRequest, NetworkResponse, NetworkRpc, NetworkRpcRouter, PeerRpcTaskCommand, RpcResult,
 };
+use crate::store::CommitStore;
 use bytes::Bytes;
 use futures::FutureExt;
 use serde::{Deserialize, Serialize};
@@ -35,6 +36,7 @@ struct SyncerTask<S, B, C> {
     last_proposed_round_sender: tokio::sync::watch::Sender<Round>,
     blocks_receiver: mpsc::Receiver<Arc<Block>>,
     last_decided: AuthorRound,
+    last_commit: Option<Commit>,
     stop: oneshot::Receiver<()>,
     clock: C,
     metrics: Arc<Metrics>,
@@ -59,7 +61,7 @@ pub struct SystemTimeClock {
 }
 
 impl Syncer {
-    pub fn start<S: Signer, B: BlockStore + Clone, C: Clock + Clone>(
+    pub fn start<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock + Clone>(
         core: Core<S, B>,
         block_store: B,
         pool: ConnectionPool,
@@ -96,6 +98,13 @@ impl Syncer {
             .collect();
         let rpc = NetworkRpc::start(pool, peer_routers);
         let (stop_sender, stop_receiver) = oneshot::channel();
+
+        let last_commit = block_store.last_commit();
+        let last_decided = last_commit
+            .as_ref()
+            .map(Commit::author_round)
+            .unwrap_or_default();
+
         let syncer = SyncerTask {
             core,
             committer,
@@ -103,7 +112,8 @@ impl Syncer {
             rpc,
             last_proposed_round_sender,
             blocks_receiver,
-            last_decided: AuthorRound::default(), // todo load
+            last_decided,
+            last_commit,
             stop: stop_receiver,
             clock,
             metrics,
@@ -121,7 +131,7 @@ impl Syncer {
     }
 }
 
-impl<S: Signer, B: BlockStore + Clone, C: Clock> SyncerTask<S, B, C> {
+impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock> SyncerTask<S, B, C> {
     pub async fn run(mut self) {
         self.try_make_proposal();
         let (mut committed, mut skipped) = (0usize, 0usize);
@@ -183,6 +193,7 @@ impl<S: Signer, B: BlockStore + Clone, C: Clock> SyncerTask<S, B, C> {
                     let commits = self.committer.try_commit(self.last_decided, *self.last_proposed_round_sender.borrow());
                     for c in commits {
                         self.last_decided = c.author_round();
+                        self.put_commit(&c);
                         match c  {
                             CommitDecision::Commit(c) => {
                                 tracing::debug!("Committed {}", c.reference());
@@ -214,6 +225,27 @@ impl<S: Signer, B: BlockStore + Clone, C: Clock> SyncerTask<S, B, C> {
         }
         tracing::debug!("Syncer stopped, waiting for rpc to stop");
         self.rpc.stop().await;
+    }
+
+    fn put_commit(&mut self, decision: &CommitDecision) {
+        match decision {
+            CommitDecision::Commit(leader) => {
+                let index = self
+                    .last_commit
+                    .as_ref()
+                    .map(|c| c.index + 1)
+                    .unwrap_or_default();
+                let commit = Commit {
+                    leader: *leader.reference(),
+                    index,
+                };
+                self.block_store.store_commit(&commit);
+                self.last_commit = Some(commit);
+            }
+            CommitDecision::Skip(_) => {
+                // todo - might want to store this too
+            }
+        }
     }
 
     fn try_make_proposal(&mut self) {
