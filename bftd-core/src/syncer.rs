@@ -237,15 +237,16 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock> SyncerTask<S, B, 
         let index = self
             .last_commit
             .as_ref()
-            .map(|c| c.index + 1)
+            .map(|c| c.index() + 1)
             .unwrap_or_default();
         let interpreter = CommitInterpreter::new(&self.block_store);
-        let non_leader_blocks = interpreter.interpret_commit(index, leader.clone());
-        let commit = Commit {
-            leader: *leader.reference(),
+        let all_blocks = interpreter.interpret_commit(index, leader.clone());
+        let commit = Commit::new(
+            self.last_commit.as_ref(),
             index,
-            all_blocks: non_leader_blocks,
-        };
+            *leader.reference(),
+            all_blocks,
+        );
         self.block_store.store_commit(&commit);
         tracing::debug!("Committed {}", commit);
         self.last_commit = Some(commit);

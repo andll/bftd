@@ -222,7 +222,7 @@ impl BlockStore for SledStore {
 
 impl CommitStore for SledStore {
     fn store_commit(&self, commit: &Commit) {
-        let key = commit.index.to_be_bytes();
+        let key = commit.index().to_be_bytes();
         let commit = bincode::serialize(commit).expect("Serialization failed");
         self.commits
             .insert(&key, commit)
@@ -372,10 +372,6 @@ mod tests {
     }
 
     fn c(i: u64, r: BlockReference) -> Commit {
-        Commit {
-            index: i,
-            leader: r,
-            all_blocks: vec![],
-        }
+        Commit::new_test(i, r, vec![r])
     }
 }

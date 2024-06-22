@@ -1,7 +1,10 @@
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::block::{format_author_round, AuthorRound, Block, BlockReference, Round};
+use crate::block::{
+    format_author_round, AuthorRound, Block, BlockReference, Round, BLOCK_HASH_LENGTH,
+};
+use blake2::{Blake2b, Digest};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::sync::Arc;
@@ -36,15 +39,68 @@ pub enum CommitDecision {
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Commit {
-    pub index: u64,
-    pub leader: BlockReference,
+    index: u64,
+    leader: BlockReference,
     /// All blocks in commit, leader block is the last block in this list
-    pub all_blocks: Vec<BlockReference>,
+    all_blocks: Vec<BlockReference>,
+    commit_hash: [u8; BLOCK_HASH_LENGTH],
 }
 
 impl Commit {
+    #[cfg(test)]
+    pub fn new_test(index: u64, leader: BlockReference, all_blocks: Vec<BlockReference>) -> Self {
+        Self {
+            index,
+            leader,
+            all_blocks,
+            commit_hash: Default::default(),
+        }
+    }
+    pub fn new(
+        previous: Option<&Commit>,
+        index: u64,
+        leader: BlockReference,
+        all_blocks: Vec<BlockReference>,
+    ) -> Self {
+        let mut previous_hash = [0u8; BLOCK_HASH_LENGTH];
+        if let Some(previous) = previous {
+            previous_hash = previous.commit_hash;
+            assert_eq!(index, previous.index + 1);
+        } else {
+            assert_eq!(index, 0);
+        }
+        assert!(!all_blocks.is_empty());
+        assert_eq!(all_blocks.last().unwrap(), &leader);
+        let mut commit_hash = Blake2b::new();
+        commit_hash.update(&previous_hash);
+        commit_hash.update(&index.to_be_bytes());
+        commit_hash.update(&(all_blocks.len() as u64).to_be_bytes());
+        for block in all_blocks.iter() {
+            commit_hash.update(&block.round_author_hash_encoding());
+        }
+        let commit_hash = commit_hash.finalize().into();
+        Self {
+            index,
+            leader,
+            all_blocks,
+            commit_hash,
+        }
+    }
+
     pub fn author_round(&self) -> AuthorRound {
         self.leader.author_round()
+    }
+
+    pub fn index(&self) -> u64 {
+        self.index
+    }
+
+    pub fn leader(&self) -> &BlockReference {
+        &self.leader
+    }
+
+    pub fn all_blocks(&self) -> &[BlockReference] {
+        &self.all_blocks
     }
 }
 
@@ -106,12 +162,16 @@ impl fmt::Debug for Commit {
         write!(f, "{}", self)
     }
 }
+
 impl fmt::Display for Commit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "<Commit#{:0>4} {}=>{:?}>",
-            self.index, self.leader, self.all_blocks
+            "<Commit#{:0>4}#{} {}=>{:?}>",
+            self.index,
+            hex::encode(&self.commit_hash[..4]),
+            self.leader,
+            self.all_blocks
         )
     }
 }
