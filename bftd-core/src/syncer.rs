@@ -19,13 +19,14 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::select;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
 pub struct Syncer {
     handle: JoinHandle<()>,
     stop: oneshot::Sender<()>,
+    last_commit_receiver: watch::Receiver<Option<u64>>,
 }
 
 struct SyncerTask<S, B, C, P> {
@@ -33,7 +34,7 @@ struct SyncerTask<S, B, C, P> {
     committer: UniversalCommitter<B>,
     block_store: B,
     rpc: NetworkRpc,
-    last_proposed_round_sender: tokio::sync::watch::Sender<Round>,
+    last_proposed_round_sender: watch::Sender<Round>,
     blocks_receiver: mpsc::Receiver<Arc<Block>>,
     proposer: P,
     last_decided: AuthorRound,
@@ -41,11 +42,12 @@ struct SyncerTask<S, B, C, P> {
     stop: oneshot::Receiver<()>,
     clock: C,
     metrics: Arc<Metrics>,
+    last_commit_sender: watch::Sender<Option<u64>>,
 }
 
 struct SyncerInner<B> {
     block_store: B,
-    last_proposed_round_receiver: tokio::sync::watch::Receiver<Round>,
+    last_proposed_round_receiver: watch::Receiver<Round>,
     validator_index: ValidatorIndex,
     committee: Arc<Committee>,
     blocks_sender: mpsc::Sender<Arc<Block>>,
@@ -82,7 +84,7 @@ impl Syncer {
             .build();
         let validator_index = core.validator_index();
         let (last_proposed_round_sender, last_proposed_round_receiver) =
-            tokio::sync::watch::channel(core.last_proposed_round());
+            watch::channel(core.last_proposed_round());
         let (blocks_sender, blocks_receiver) = mpsc::channel(10);
         let inner = Arc::new(SyncerInner {
             block_store: block_store.clone(),
@@ -112,6 +114,9 @@ impl Syncer {
             .map(Commit::author_round)
             .unwrap_or_default();
 
+        let (last_commit_sender, last_commit_receiver) =
+            watch::channel(last_commit.as_ref().map(Commit::index));
+
         let syncer = SyncerTask {
             core,
             committer,
@@ -125,17 +130,23 @@ impl Syncer {
             stop: stop_receiver,
             clock,
             metrics,
+            last_commit_sender,
         };
         let handle = tokio::spawn(syncer.run());
         Syncer {
             handle,
             stop: stop_sender,
+            last_commit_receiver,
         }
     }
 
     pub async fn stop(self) {
         drop(self.stop);
         self.handle.await.ok();
+    }
+
+    pub fn last_commit_receiver(&self) -> &watch::Receiver<Option<u64>> {
+        &self.last_commit_receiver
     }
 }
 
@@ -259,6 +270,7 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
         );
         self.block_store.store_commit(&commit);
         tracing::debug!("Committed {}", commit);
+        self.last_commit_sender.send(Some(commit.index())).ok();
         self.last_commit = Some(commit);
     }
 

@@ -7,13 +7,16 @@ use bftd_core::block_manager::BlockStore;
 use bftd_core::consensus::Commit;
 use bftd_core::mempool::{BasicMempoolClient, MAX_TRANSACTION};
 use bftd_core::store::CommitStore;
+use bftd_core::syncer::Syncer;
 use bytes::Bytes;
 use std::future::IntoFuture;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
+use tokio::time::Instant;
 
 pub struct BftdServer {
     join_handle: JoinHandle<io::Result<()>>,
@@ -24,10 +27,12 @@ impl BftdServer {
         address: SocketAddr,
         mempool_client: BasicMempoolClient,
         block_store: B,
+        syncer: Arc<Syncer>,
     ) -> anyhow::Result<Self> {
         let state = BftdServerState {
             mempool_client,
             block_store,
+            syncer,
         };
         let state = Arc::new(state);
         let app = Router::new()
@@ -56,6 +61,7 @@ impl BftdServer {
 struct BftdServerState<B> {
     mempool_client: BasicMempoolClient,
     block_store: B,
+    syncer: Arc<Syncer>,
 }
 
 type HttpResult<T> = Result<T, (StatusCode, &'static str)>;
@@ -82,6 +88,30 @@ impl<B: BlockStore + CommitStore> BftdServerState<B> {
         State(state): State<Arc<Self>>,
         Path(index): Path<u64>,
     ) -> HttpResult<Json<Commit>> {
+        let lag = index.saturating_sub(
+            state
+                .syncer
+                .last_commit_receiver()
+                .borrow()
+                .unwrap_or_default(),
+        );
+        if lag > 10 {
+            return Err((StatusCode::NOT_FOUND, "Commit not found"));
+        } else if lag > 0 {
+            // We can block request for short period if commit is not yet available but lag is not too large
+            // This allows to use get_commit endpoint to long poll for next commit
+            // (nit) there is off-by-one error here as we do not wait for 0 commit if it's not available. Seem not important though
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let mut receiver = state.syncer.last_commit_receiver().clone();
+            while receiver.borrow_and_update().unwrap_or_default() < index {
+                let fut = tokio::time::timeout_at(deadline, receiver.changed());
+                match fut.await {
+                    Ok(Ok(())) => {}                                                   // resume loop
+                    Ok(Err(_)) => return Err((StatusCode::INTERNAL_SERVER_ERROR, "")), // syncer has stopped
+                    Err(_) => return Err((StatusCode::NOT_FOUND, "Commit not found")), // timeout
+                }
+            }
+        }
         let Some(commit) = state.block_store.get_commit(index) else {
             return Err((StatusCode::NOT_FOUND, "Commit not found"));
         };
