@@ -25,8 +25,6 @@ pub mod mempool;
 pub mod metrics;
 pub mod network;
 pub mod rpc;
-#[cfg(feature = "server")]
-pub mod server;
 pub mod store;
 pub mod syncer;
 mod threshold_clock;

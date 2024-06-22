@@ -11,7 +11,7 @@ parking_lot = "0.12.3"
 log = "0.4.21"
 env_logger = "0.11.3"
 hex = "0.4.3"
-bytes = { version = "1.4.0", features = ["serde"] }
+bytes = { version = "1.6.0", features = ["serde"] }
 futures = "0.3.28"
 async-trait = "0.1.71"
 serde = { version = "1.0.166", features = ["derive"] }
@@ -23,12 +23,8 @@ thiserror = "1.0.42"
 rand = "0.8.5"
 seahash = "4.1.0"
 tracing = "0.1.40"
-tiny_http = { version = "0.12.0", optional = true }
 prometheus = "0.13.4"
 
 [dev-dependencies]
 tempdir = "0.3.7"
 tracing-subscriber = { version = "0.3.18",features = ["env-filter"] }
-
-[features]
-server = ["tiny_http"]

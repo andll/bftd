@@ -29,7 +29,7 @@ impl BasicMempool {
 
 impl BasicMempoolClient {
     pub async fn send_transaction(
-        &mut self,
+        &self,
         transaction: Vec<u8>,
     ) -> Result<(), mpsc::error::SendError<Vec<u8>>> {
         assert!(transaction.len() <= MAX_TRANSACTION);

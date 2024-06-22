@@ -62,7 +62,12 @@ pub struct SystemTimeClock {
 }
 
 impl Syncer {
-    pub fn start<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock + Clone, P: ProposalMaker>(
+    pub fn start<
+        S: Signer,
+        B: BlockStore + CommitStore + Clone,
+        C: Clock + Clone,
+        P: ProposalMaker,
+    >(
         core: Core<S, B>,
         block_store: B,
         pool: ConnectionPool,
@@ -134,7 +139,9 @@ impl Syncer {
     }
 }
 
-impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker> SyncerTask<S, B, C, P> {
+impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
+    SyncerTask<S, B, C, P>
+{
     pub async fn run(mut self) {
         self.try_make_proposal();
         let (mut committed, mut skipped) = (0usize, 0usize);

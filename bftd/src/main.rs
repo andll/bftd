@@ -1,5 +1,6 @@
 mod node;
 mod prometheus;
+pub mod server;
 mod test_cluster;
 
 use crate::test_cluster::TestCluster;

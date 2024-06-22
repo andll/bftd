@@ -19,6 +19,10 @@ pub trait CommitStore: Send + Sync + 'static {
     /// Store commit
     fn store_commit(&self, commit: &Commit);
 
+    /// Load commit by index
+    /// This is not used directly by core but useful for other services
+    fn get_commit(&self, index: u64) -> Option<Commit>;
+
     /// Load commit with the highest index
     fn last_commit(&self) -> Option<Commit>;
 
@@ -229,6 +233,14 @@ impl CommitStore for SledStore {
             .expect("Storage operation failed");
     }
 
+    fn get_commit(&self, index: u64) -> Option<Commit> {
+        let key = index.to_be_bytes();
+        let commit = self.commits.get(&key).expect("Storage operation failed")?;
+        let commit = bincode::deserialize(commit.as_ref())
+            .expect("Deserializing commit from storage failed");
+        Some(commit)
+    }
+
     fn last_commit(&self) -> Option<Commit> {
         let (_, commit) = self.commits.last().expect("Storage operation failed")?;
         let commit = bincode::deserialize(commit.as_ref())
@@ -261,6 +273,10 @@ impl CommitStore for SledStore {
 impl<T: CommitStore> CommitStore for Arc<T> {
     fn store_commit(&self, commit: &Commit) {
         self.deref().store_commit(commit)
+    }
+
+    fn get_commit(&self, index: u64) -> Option<Commit> {
+        self.deref().get_commit(index)
     }
 
     fn last_commit(&self) -> Option<Commit> {
