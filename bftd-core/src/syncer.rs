@@ -2,7 +2,7 @@ use crate::block::{AuthorRound, Block, BlockReference, Round, ValidatorIndex};
 use crate::block_manager::BlockStore;
 use crate::committee::Committee;
 use crate::consensus::{Commit, CommitDecision, UniversalCommitter, UniversalCommitterBuilder};
-use crate::core::Core;
+use crate::core::{Core, ProposalMaker};
 use crate::crypto::Signer;
 use crate::metrics::Metrics;
 use crate::network::ConnectionPool;
@@ -28,13 +28,14 @@ pub struct Syncer {
     stop: oneshot::Sender<()>,
 }
 
-struct SyncerTask<S, B, C> {
+struct SyncerTask<S, B, C, P> {
     core: Core<S, B>,
     committer: UniversalCommitter<B>,
     block_store: B,
     rpc: NetworkRpc,
     last_proposed_round_sender: tokio::sync::watch::Sender<Round>,
     blocks_receiver: mpsc::Receiver<Arc<Block>>,
+    proposer: P,
     last_decided: AuthorRound,
     last_commit: Option<Commit>,
     stop: oneshot::Receiver<()>,
@@ -61,11 +62,12 @@ pub struct SystemTimeClock {
 }
 
 impl Syncer {
-    pub fn start<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock + Clone>(
+    pub fn start<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock + Clone, P: ProposalMaker>(
         core: Core<S, B>,
         block_store: B,
         pool: ConnectionPool,
         clock: C,
+        proposer: P,
     ) -> Self {
         let committee = core.committee().clone();
         let metrics = core.metrics().clone();
@@ -112,6 +114,7 @@ impl Syncer {
             rpc,
             last_proposed_round_sender,
             blocks_receiver,
+            proposer,
             last_decided,
             last_commit,
             stop: stop_receiver,
@@ -131,7 +134,7 @@ impl Syncer {
     }
 }
 
-impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock> SyncerTask<S, B, C> {
+impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker> SyncerTask<S, B, C, P> {
     pub async fn run(mut self) {
         self.try_make_proposal();
         let (mut committed, mut skipped) = (0usize, 0usize);
@@ -272,7 +275,7 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock> SyncerTask<S, B, 
     fn make_proposal_for_round(&mut self, round: Round) {
         let proposal = self
             .core
-            .make_proposal(&mut (), round, self.clock.time_ns());
+            .make_proposal(&mut self.proposer, round, self.clock.time_ns());
         tracing::debug!("Generated proposal {}", proposal);
         self.last_proposed_round_sender
             .send(proposal.reference().round)

@@ -167,7 +167,7 @@ impl fmt::Display for Commit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "<Commit#{:0>4}#{} {}=>{:?}>",
+            "<Commit#{:0>6}#{} {}=>{:?}>",
             self.index,
             hex::encode(&self.commit_hash[..4]),
             self.leader,

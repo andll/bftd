@@ -99,7 +99,7 @@ impl Node {
             metrics,
         );
         let clock = SystemTimeClock::new();
-        let syncer = Syncer::start(core, block_store, pool, clock);
+        let syncer = Syncer::start(core, block_store, pool, clock, ());
 
         Ok(NodeHandle {
             syncer,

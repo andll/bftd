@@ -427,7 +427,7 @@ impl fmt::Debug for ValidatorIndex {
 
 impl fmt::Display for Round {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:0>4}", self.0)
+        write!(f, "{:0>6}", self.0)
     }
 }
 

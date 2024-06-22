@@ -19,7 +19,7 @@ pub struct Core<S, B> {
     metrics: Arc<Metrics>,
 }
 
-pub trait ProposalMaker {
+pub trait ProposalMaker: Send + 'static {
     fn make_proposal(&mut self) -> Bytes;
 }
 
