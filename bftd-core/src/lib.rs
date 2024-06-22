@@ -21,7 +21,6 @@ pub mod core;
 pub mod crypto;
 pub mod genesis;
 mod log;
-pub mod mempool;
 pub mod metrics;
 pub mod network;
 pub mod rpc;

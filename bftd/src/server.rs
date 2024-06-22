@@ -1,3 +1,4 @@
+use crate::mempool::{BasicMempoolClient, TransactionsPayloadReader, MAX_TRANSACTION};
 use axum::extract::{DefaultBodyLimit, Path, State};
 use axum::http::header::ACCEPT;
 use axum::http::{HeaderMap, StatusCode};
@@ -7,7 +8,6 @@ use axum::{Json, Router};
 use bftd_core::block::{Block, BlockHash, BlockReference, ChainId, Round, ValidatorIndex};
 use bftd_core::block_manager::BlockStore;
 use bftd_core::consensus::Commit;
-use bftd_core::mempool::{BasicMempoolClient, TransactionsPayloadReader, MAX_TRANSACTION};
 use bftd_core::store::CommitStore;
 use bftd_core::syncer::Syncer;
 use bytes::Bytes;
@@ -92,14 +92,14 @@ impl<B: BlockStore + CommitStore> BftdServerState<B> {
             return Err((StatusCode::NOT_FOUND, "Block not found"));
         };
         let accept = accept.to_str().map_err(|_| ());
-        if accept.eq(&Ok(mime::APPLICATION_JSON.as_ref())) {
+        if accept.eq(&Ok(mime::APPLICATION_OCTET_STREAM.as_ref())) {
+            Ok(block.data().clone().into_response())
+        } else if accept.eq(&Ok(mime::APPLICATION_JSON.as_ref())) {
             // panic here is prevented by using TransactionsPayloadBlockFilter when running cluster
             let payload_reader = TransactionsPayloadReader::new_verify(block.payload_bytes())
                 .expect("Local block has invalid payload");
             let block = JsonBlock::from_block(&block, &payload_reader);
             Ok(Json(block).into_response())
-        } else if accept.eq(&Ok(mime::APPLICATION_OCTET_STREAM.as_ref())) {
-            Ok(block.data().clone().into_response())
         } else {
             return Err((StatusCode::BAD_REQUEST, "Unsupported Accept value"));
         }

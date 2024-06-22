@@ -1,3 +1,4 @@
+pub mod mempool;
 mod node;
 mod prometheus;
 pub mod server;

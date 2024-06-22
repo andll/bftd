@@ -1,9 +1,9 @@
+use crate::mempool::TransactionsPayloadBlockFilter;
 use crate::prometheus::{start_prometheus_server, PrometheusJoinHandle};
 use bftd_core::config::BftdConfig;
 use bftd_core::core::Core;
 use bftd_core::crypto::Ed25519Signer;
 use bftd_core::genesis::Genesis;
-use bftd_core::mempool::TransactionsPayloadBlockFilter;
 use bftd_core::metrics::Metrics;
 use bftd_core::network::{ConnectionPool, NoisePrivateKey};
 use bftd_core::store::SledStore;

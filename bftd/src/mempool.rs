@@ -1,7 +1,7 @@
-use crate::block::{Block, MAX_BLOCK_PAYLOAD};
-use crate::core::ProposalMaker;
-use crate::syncer::BlockFilter;
 use anyhow::ensure;
+use bftd_core::block::{Block, MAX_BLOCK_PAYLOAD};
+use bftd_core::core::ProposalMaker;
+use bftd_core::syncer::BlockFilter;
 use bytes::{BufMut, Bytes, BytesMut};
 use std::sync::Arc;
 use tokio::sync::mpsc;
