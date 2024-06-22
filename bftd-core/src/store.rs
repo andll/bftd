@@ -1,7 +1,8 @@
 use crate::block::{Block, BlockReference, Round, ValidatorIndex};
 use crate::block_manager::BlockStore;
 use crate::consensus::Commit;
-use sled::{IVec, Tree};
+use sled::{IVec, Mode, Tree};
+use std::collections::HashSet;
 use std::io;
 use std::ops::Deref;
 use std::path::Path;
@@ -11,24 +12,81 @@ pub struct SledStore {
     blocks: Tree,
     index: Tree,
     commits: Tree,
+    block_commits: Tree,
 }
 
 pub trait CommitStore: Send + Sync + 'static {
+    /// Store commit
     fn store_commit(&self, commit: &Commit);
 
+    /// Load commit with the highest index
     fn last_commit(&self) -> Option<Commit>;
+
+    /// Associate block with commit index
+    fn set_block_commit(&self, r: &BlockReference, index: u64);
+    /// Get commit index associated with the block
+    fn get_block_commit(&self, r: &BlockReference) -> Option<u64>;
+}
+
+pub struct CommitInterpreter<'a, S> {
+    store: &'a S,
+}
+
+impl<'a, S: CommitStore + BlockStore> CommitInterpreter<'a, S> {
+    pub fn new(store: &'a S) -> Self {
+        Self { store }
+    }
+
+    pub fn interpret_commit(&self, index: u64, leader: Arc<Block>) -> Vec<BlockReference> {
+        let mut blocks = Vec::new();
+        self.store.set_block_commit(leader.reference(), index);
+        let mut to_inspect = Vec::new();
+        blocks.push(*leader.reference());
+        to_inspect.push(leader);
+        // todo - keep this between interpreting?
+        let mut seen_parents = HashSet::new();
+        while let Some(block) = to_inspect.pop() {
+            for parent in block.parents() {
+                if !seen_parents.insert(*parent) {
+                    continue;
+                }
+                if let Some(associated_index) = self.store.get_block_commit(parent) {
+                    if associated_index < index {
+                        // skip previously committed block
+                        continue;
+                    } else if associated_index == index {
+                        // use this block
+                    } else {
+                        panic!("Inspecting commit with associated index {associated_index} while building commit {index}");
+                    }
+                }
+                self.store.set_block_commit(parent, index);
+                let parent = self.store.get(parent).expect("Parent block not found");
+                blocks.push(*parent.reference());
+                to_inspect.push(parent);
+            }
+        }
+        // todo - sort by round?
+        blocks.reverse();
+        blocks
+    }
 }
 
 impl SledStore {
     pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
-        let db = sled::open(path)?;
+        let db = sled::Config::new()
+            .path(path)
+            .mode(Mode::HighThroughput)
+            .open()?;
         let blocks = db.open_tree("blocks")?;
         let index = db.open_tree("index")?;
         let commits = db.open_tree("commits")?;
+        let block_commits = db.open_tree("block_commits")?;
         Ok(Self {
             blocks,
             index,
             commits,
+            block_commits,
         })
     }
 
@@ -177,6 +235,27 @@ impl CommitStore for SledStore {
             .expect("Deserializing commit from storage failed");
         Some(commit)
     }
+
+    fn set_block_commit(&self, r: &BlockReference, index: u64) {
+        let prev = self
+            .block_commits
+            .insert(r.round_author_hash_encoding(), &index.to_be_bytes())
+            .expect("Storage operation failed");
+        if let Some(prev) = prev {
+            let prev = u64::from_be_bytes(prev.as_ref().try_into().unwrap());
+            if prev != index {
+                panic!("Overwriting commit index for {r} from {prev} to {index}");
+            }
+        }
+    }
+
+    fn get_block_commit(&self, r: &BlockReference) -> Option<u64> {
+        let v = self
+            .block_commits
+            .get(r.round_author_hash_encoding())
+            .expect("Storage operation failed");
+        v.map(|v| u64::from_be_bytes(v.as_ref().try_into().unwrap()))
+    }
 }
 
 impl<T: CommitStore> CommitStore for Arc<T> {
@@ -186,6 +265,14 @@ impl<T: CommitStore> CommitStore for Arc<T> {
 
     fn last_commit(&self) -> Option<Commit> {
         self.deref().last_commit()
+    }
+
+    fn set_block_commit(&self, r: &BlockReference, index: u64) {
+        self.deref().set_block_commit(r, index)
+    }
+
+    fn get_block_commit(&self, r: &BlockReference) -> Option<u64> {
+        self.deref().get_block_commit(r)
     }
 }
 
@@ -246,18 +333,49 @@ mod tests {
 
     #[test]
     fn sled_commit_store_test() {
-        let dir = TempDir::new("sled_store_test").unwrap();
+        let dir = TempDir::new("sled_commit_store_test").unwrap();
         let store = SledStore::open(dir).unwrap();
         store.store_commit(&c(0, br(1, 1)));
         let last = c(1, br(2, 1));
         store.store_commit(&last);
-        assert_eq!(store.last_commit(), Some(last))
+        assert_eq!(store.last_commit(), Some(last));
+
+        store.set_block_commit(&br(2, 3), 5);
+        assert_eq!(store.get_block_commit(&br(2, 3)), Some(5));
+        assert_eq!(store.get_block_commit(&br(3, 3)), None);
+    }
+
+    #[test]
+    fn commit_interpreter_test() {
+        let dir = TempDir::new("commit_interpreter_test").unwrap();
+        let store = SledStore::open(dir).unwrap();
+        store.put(blk(0, 0, vec![]));
+        let b0 = blk(1, 0, vec![]);
+        store.put(b0.clone());
+        store.put(blk(2, 0, vec![]));
+
+        let b1 = blk(1, 1, vec![br(1, 0), br(0, 0)]);
+        store.put(b1.clone());
+        store.put(blk(2, 1, vec![br(2, 0), br(0, 0)]));
+        let c2 = blk(3, 2, vec![br(1, 0), br(2, 1)]);
+        store.put(c2.clone());
+
+        let interpreter = CommitInterpreter::new(&store);
+        let c = interpreter.interpret_commit(0, b0);
+        assert_eq!(c, vec![br(1, 0)]);
+
+        let c = interpreter.interpret_commit(1, b1);
+        assert_eq!(c, vec![br(0, 0), br(1, 1)]);
+
+        let c = interpreter.interpret_commit(1, c2);
+        assert_eq!(c, vec![br(0, 0), br(2, 0), br(2, 1), br(3, 2)]);
     }
 
     fn c(i: u64, r: BlockReference) -> Commit {
         Commit {
             index: i,
             leader: r,
+            all_blocks: vec![],
         }
     }
 }

@@ -38,6 +38,8 @@ pub enum CommitDecision {
 pub struct Commit {
     pub index: u64,
     pub leader: BlockReference,
+    /// All blocks in commit, leader block is the last block in this list
+    pub all_blocks: Vec<BlockReference>,
 }
 
 impl Commit {
@@ -106,6 +108,10 @@ impl fmt::Debug for Commit {
 }
 impl fmt::Display for Commit {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "<Commit @{} {}>", self.index, self.leader)
+        write!(
+            f,
+            "<Commit#{:0>4} {}=>{:?}>",
+            self.index, self.leader, self.all_blocks
+        )
     }
 }

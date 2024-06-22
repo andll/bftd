@@ -9,7 +9,7 @@ use crate::network::ConnectionPool;
 use crate::rpc::{
     NetworkRequest, NetworkResponse, NetworkRpc, NetworkRpcRouter, PeerRpcTaskCommand, RpcResult,
 };
-use crate::store::CommitStore;
+use crate::store::{CommitInterpreter, CommitStore};
 use bytes::Bytes;
 use futures::FutureExt;
 use serde::{Deserialize, Serialize};
@@ -195,12 +195,10 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock> SyncerTask<S, B, 
                         self.last_decided = c.author_round();
                         self.put_commit(&c);
                         match c  {
-                            CommitDecision::Commit(c) => {
-                                tracing::debug!("Committed {}", c.reference());
+                            CommitDecision::Commit(_) => {
                                 committed += 1;
                             },
-                            CommitDecision::Skip(author_round) => {
-                                tracing::debug!("Skipping commit at {}", author_round);
+                            CommitDecision::Skip(_) => {
                                 skipped += 1;
                             }
                         }
@@ -228,24 +226,29 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock> SyncerTask<S, B, 
     }
 
     fn put_commit(&mut self, decision: &CommitDecision) {
-        match decision {
-            CommitDecision::Commit(leader) => {
-                let index = self
-                    .last_commit
-                    .as_ref()
-                    .map(|c| c.index + 1)
-                    .unwrap_or_default();
-                let commit = Commit {
-                    leader: *leader.reference(),
-                    index,
-                };
-                self.block_store.store_commit(&commit);
-                self.last_commit = Some(commit);
-            }
-            CommitDecision::Skip(_) => {
+        let leader = match decision {
+            CommitDecision::Commit(leader) => leader,
+            CommitDecision::Skip(author_round) => {
                 // todo - might want to store this too
+                tracing::debug!("Skipping commit at {}", author_round);
+                return;
             }
-        }
+        };
+        let index = self
+            .last_commit
+            .as_ref()
+            .map(|c| c.index + 1)
+            .unwrap_or_default();
+        let interpreter = CommitInterpreter::new(&self.block_store);
+        let non_leader_blocks = interpreter.interpret_commit(index, leader.clone());
+        let commit = Commit {
+            leader: *leader.reference(),
+            index,
+            all_blocks: non_leader_blocks,
+        };
+        self.block_store.store_commit(&commit);
+        tracing::debug!("Committed {}", commit);
+        self.last_commit = Some(commit);
     }
 
     fn try_make_proposal(&mut self) {
