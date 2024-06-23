@@ -184,7 +184,7 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                     let reference = *block.reference();
                     // todo need more block verification
                     let age_ms = self.clock.time_ns().saturating_sub(block.time_ns()) / 1000 / 1000;
-                    self.metrics.syncer_received_block_age_ms.observe(age_ms as f64);
+                    self.metrics.syncer_received_block_age_ms.with_label_values(&[self.metrics.validator_label(block.author())]).observe(age_ms as f64);
                     let add_block_result = self.core.add_block(block);
                     let added_this = add_block_result.added.iter().any(|b|*b.reference() == reference);
                     tracing::debug!("Received {reference} {} age {age_ms} ms", if added_this {
@@ -407,7 +407,10 @@ impl<B: BlockStore, C: Clock + Clone, F: BlockFilter> PeerRouter<B, C, F> {
                     let response = StreamRpcResponse::Chunk(chunk, i == chunks_len - 1);
                     let response = bincode::serialize(&response).expect("Serialization failed");
                     if response.len() > MAX_MESSAGE {
-                        panic!("Somehow generated message length {} longer then {MAX_MESSAGE}", response.len());
+                        panic!(
+                            "Somehow generated message length {} longer then {MAX_MESSAGE}",
+                            response.len()
+                        );
                     }
                     if sender.send(NetworkResponse(response.into())).await.is_err() {
                         tracing::debug!("Subscription from {peer_index} ended");

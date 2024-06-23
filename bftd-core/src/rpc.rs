@@ -511,7 +511,7 @@ mod test {
     pub async fn rpc_test() {
         enable_test_logging();
         let test_pool = TestConnectionPool::new(2, 8180).await;
-        let metrics = Metrics::new();
+        let metrics = Metrics::new_test();
 
         let ([pool1, pool2], [kpb1, kpb2], runtimes) = test_pool.into_parts();
         let rpc1 = NetworkRpc::start(

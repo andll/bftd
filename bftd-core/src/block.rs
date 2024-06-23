@@ -406,6 +406,12 @@ impl AuthorRound {
     }
 }
 
+impl ValidatorIndex {
+    pub fn slice_get<'a, T>(&self, v: &'a [T]) -> &'a T {
+        &v[self.0 as usize]
+    }
+}
+
 impl PartialEq for Block {
     fn eq(&self, other: &Self) -> bool {
         self.reference == other.reference

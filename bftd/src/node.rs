@@ -95,7 +95,7 @@ impl Node {
         let block_store = SledStore::open(&self.storage_path)?;
         let block_store = Arc::new(block_store);
         let registry = Registry::new();
-        let metrics = Metrics::new_in_registry(&registry);
+        let metrics = Metrics::new_in_registry(&registry, &committee);
         let prometheus_handle = if let Some(prometheus_bind) = self.config.prometheus_bind {
             Some(start_prometheus_server(prometheus_bind, &registry).await?)
         } else {
