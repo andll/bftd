@@ -1,3 +1,4 @@
+use crate::metrics::Metrics;
 use crate::network::{Connection, NetworkMessage};
 use crate::network::{ConnectionPool, NoisePublicKey};
 use bytes::Bytes;
@@ -59,6 +60,7 @@ impl NetworkRpc {
     pub fn start(
         pool: ConnectionPool,
         peer_routers: HashMap<NoisePublicKey, Box<dyn NetworkRpcRouter>>,
+        metrics: Arc<Metrics>,
     ) -> Self {
         let connection_status: HashMap<_, _> = peer_routers
             .keys()
@@ -87,6 +89,7 @@ impl NetworkRpc {
             connection_counter: connection_counter.clone(),
             connection_status_changed: connection_status_changed.clone(),
             stop: stop_receiver,
+            metrics,
         };
         let handle = tokio::spawn(rpc_task.run());
         Self {
@@ -173,6 +176,7 @@ struct RpcTask {
     connection_counter: Arc<AtomicUsize>,
     connection_status_changed: Arc<Notify>,
     stop: oneshot::Receiver<()>,
+    metrics: Arc<Metrics>,
 }
 
 struct PeerTaskData {
@@ -204,6 +208,7 @@ impl RpcTask {
                     let peer_task_data = peer_task_data.unwrap();
                     self.connection_status.get(&key).expect("Unexpected validator connection public key").store(false, Ordering::Relaxed);
                     self.connection_counter.fetch_sub(1, Ordering::Relaxed);
+                    self.metrics.rpc_connected_peers.sub(1);
                     self.connection_status_changed.notify_waiters();
                     peer_tasks.remove(&key).unwrap();
                     if let Some(peer_task_data) = peer_task_data {
@@ -230,6 +235,7 @@ impl RpcTask {
                     .expect("Unexpected validator connection public key")
                     .store(true, Ordering::Relaxed);
                 self.connection_counter.fetch_add(1, Ordering::Relaxed);
+                self.metrics.rpc_connected_peers.add(1);
                 self.connection_status_changed.notify_waiters();
                 self.peer_task_data.remove(&connection.peer.public_key)
             };
@@ -505,15 +511,18 @@ mod test {
     pub async fn rpc_test() {
         enable_test_logging();
         let test_pool = TestConnectionPool::new(2, 8180).await;
+        let metrics = Metrics::new();
 
         let ([pool1, pool2], [kpb1, kpb2], runtimes) = test_pool.into_parts();
         let rpc1 = NetworkRpc::start(
             pool1,
             [(kpb2.clone(), TestRpcRouter::new())].into_iter().collect(),
+            metrics.clone(),
         );
         let rpc2 = NetworkRpc::start(
             pool2,
             [(kpb1.clone(), TestRpcRouter::new())].into_iter().collect(),
+            metrics.clone(),
         );
 
         let bytes = rpc1

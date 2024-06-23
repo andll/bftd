@@ -5,11 +5,13 @@ use bftd_core::config::BftdConfig;
 use bftd_core::crypto::{blake2_hash, generate_validator_key_pair, Ed25519Signer};
 use bftd_core::genesis::Genesis;
 use bftd_core::network::{generate_network_keypair, NoisePrivateKey};
+use handlebars::Handlebars;
 use rand::rngs::ThreadRng;
+use serde::Serialize;
+use std::fs;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::{fs, io};
 
 pub struct TestCluster {
     genesis: Genesis,
@@ -69,7 +71,16 @@ impl TestCluster {
         }
     }
 
-    pub fn store_into(&self, path: &PathBuf) -> io::Result<()> {
+    pub fn store_into(
+        &self,
+        path: &PathBuf,
+        prometheus_template: Option<PathBuf>,
+    ) -> anyhow::Result<()> {
+        let prometheus_template = prometheus_template
+            .map(fs::read_to_string)
+            .map(Result::unwrap);
+        let genesis_path = Self::genesis_path(&path);
+        fs::write(&genesis_path, self.genesis.data())?;
         for (v, ((noise_pk, protocol_pk), config)) in self
             .network_private_keys
             .iter()
@@ -81,10 +92,23 @@ impl TestCluster {
             fs::create_dir(&peer_dir)?;
             fs::write(peer_dir.join("noise_key"), noise_pk)?;
             fs::write(peer_dir.join("protocol_key"), protocol_pk)?;
-            let config = toml::to_string_pretty(&config).unwrap();
-            fs::write(peer_dir.join("config"), &config)?;
+            let config_yml = toml::to_string_pretty(&config).unwrap();
+            fs::write(peer_dir.join("config"), &config_yml)?;
+            if let Some(prometheus_template) = prometheus_template.as_ref() {
+                let prometheus_bind = config
+                    .prometheus_bind
+                    .expect("prometheus_bind is required with prometheus_template");
+                let mut hb = Handlebars::new();
+                hb.set_strict_mode(true);
+                let args = PrometheusTemplateArgs {
+                    validator: format!("{}", config.validator_index),
+                    prometheus_bind: prometheus_bind.to_string(),
+                };
+                let prometheus_config = hb.render_template(&prometheus_template, &args)?;
+                fs::write(peer_dir.join("prometheus.yml"), &prometheus_config)?;
+                fs::hard_link(&genesis_path, peer_dir.join("genesis"))?;
+            }
         }
-        fs::write(Self::genesis_path(&path), self.genesis.data())?;
         Ok(())
     }
 
@@ -112,4 +136,18 @@ impl TestCluster {
     fn peer_path(path: &PathBuf, v: usize) -> PathBuf {
         path.join(format!("{v:0>3}"))
     }
+}
+
+pub fn start_node(path: PathBuf) -> anyhow::Result<NodeHandle> {
+    let genesis = Genesis::load(fs::read(TestCluster::genesis_path(&path))?.into())?;
+    let genesis = Arc::new(genesis);
+    let node = Node::load(&path, genesis)?;
+    let handle = node.start()?;
+    Ok(handle)
+}
+
+#[derive(Serialize)]
+struct PrometheusTemplateArgs {
+    validator: String,
+    prometheus_bind: String,
 }

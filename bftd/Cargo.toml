@@ -19,3 +19,4 @@ bytes = { version = "1.6.0", features = ["serde"] }
 hex = "0.4.3"
 mime = "0.3.17"
 serde = { version = "1.0.203", features = ["derive"] }
+handlebars = "5.1.2"

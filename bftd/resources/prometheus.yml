@@ -1,0 +1,43 @@
+# Sample config for Prometheus.
+
+global:
+  scrape_interval:     15s # Set the scrape interval to every 15 seconds. Default is every 1 minute.
+  evaluation_interval: 15s # Evaluate rules every 15 seconds. The default is every 1 minute.
+
+  external_labels:
+    validator: '{{validator}}'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['localhost:9093']
+
+scrape_configs:
+  # The job name is added as a label `job=<job_name>` to any timeseries scraped from this config.
+  - job_name: 'prometheus'
+
+    # Override the global default and scrape targets from this job every 5 seconds.
+    scrape_interval: 5s
+    scrape_timeout: 5s
+
+    # metrics_path defaults to '/metrics'
+    # scheme defaults to 'http'.
+
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: node
+    # If prometheus-node-exporter is installed, grab stats about the local
+    # machine by default.
+    static_configs:
+      - targets: ['localhost:9100']
+  - job_name: bftd
+    static_configs:
+      - targets: ['{{prometheus_bind}}']
+
+remote_write:
+  - url: https://prometheus-prod-13-prod-us-east-0.grafana.net/api/prom/push
+    basic_auth:
+      username: 1645235
+      password: glc_eyJvIjoiMTE1NTM0MyIsIm4iOiJzdGFjay05NjQ3NjItaW50ZWdyYXRpb24tYSIsImsiOiJqMTh0NE9VWTBGaUY2RjM4SThOSTlOWDciLCJtIjp7InIiOiJwcm9kLXVzLWVhc3QtMCJ9fQ==

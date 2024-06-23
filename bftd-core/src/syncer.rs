@@ -115,7 +115,7 @@ impl Syncer {
                 (key, Box::new(peer_router) as Box<dyn NetworkRpcRouter>)
             })
             .collect();
-        let rpc = NetworkRpc::start(pool, peer_routers);
+        let rpc = NetworkRpc::start(pool, peer_routers, metrics.clone());
         let (stop_sender, stop_receiver) = oneshot::channel();
 
         let last_commit = block_store.last_commit();

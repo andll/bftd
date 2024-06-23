@@ -4,7 +4,7 @@ mod prometheus;
 pub mod server;
 mod test_cluster;
 
-use crate::test_cluster::TestCluster;
+use crate::test_cluster::{start_node, TestCluster};
 use anyhow::bail;
 use clap::Parser;
 use std::net::SocketAddr;
@@ -16,6 +16,7 @@ use tracing_subscriber::EnvFilter;
 enum Args {
     NewChain(NewChainArgs),
     LocalCluster(LocalClusterArgs),
+    Run(RunArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -28,11 +29,18 @@ struct NewChainArgs {
     prometheus_bind: Option<SocketAddr>,
     #[arg(long, short = 's')]
     http_server_bind: Option<SocketAddr>,
+    #[arg(long, short = 't', requires = "prometheus_bind")]
+    prometheus_template: Option<PathBuf>,
 }
 
 #[derive(Parser, Debug)]
 struct LocalClusterArgs {
     name: String,
+}
+
+#[derive(Parser, Debug)]
+struct RunArgs {
+    dir: PathBuf,
 }
 
 fn main() {
@@ -51,6 +59,7 @@ fn handle_args(args: Args) -> anyhow::Result<()> {
     match args {
         Args::NewChain(args) => handle_new_chain(args),
         Args::LocalCluster(args) => handle_local_cluster(args),
+        Args::Run(args) => handle_run(args),
     }
 }
 fn handle_new_chain(args: NewChainArgs) -> anyhow::Result<()> {
@@ -74,7 +83,7 @@ fn handle_new_chain(args: NewChainArgs) -> anyhow::Result<()> {
         args.http_server_bind,
     );
     println!("Storing test cluster into {path:?}");
-    test_cluster.store_into(&path)?;
+    test_cluster.store_into(&path, args.prometheus_template)?;
     Ok(())
 }
 
@@ -82,6 +91,12 @@ fn handle_local_cluster(args: LocalClusterArgs) -> anyhow::Result<()> {
     let clusters_path = PathBuf::from("clusters");
     let path = clusters_path.join(&args.name);
     let _handles = TestCluster::start_test_cluster(path)?;
+    thread::park();
+    Ok(())
+}
+
+fn handle_run(args: RunArgs) -> anyhow::Result<()> {
+    let _handle = start_node(args.dir)?;
     thread::park();
     Ok(())
 }
