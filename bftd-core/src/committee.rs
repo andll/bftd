@@ -1,4 +1,4 @@
-use crate::block::{Block, ChainId, Round, ValidatorIndex};
+use crate::block::{Block, ChainId, Round, ValidatorIndex, MAX_PARENTS};
 use crate::crypto::{Blake2Hasher, Ed25519Verifier};
 use crate::network::{NoisePublicKey, PeerInfo};
 use anyhow::{bail, ensure};
@@ -20,7 +20,8 @@ pub struct Committee {
     pub f2_threshold: Stake, // The minimum stake required for quorum(2f+1)
 }
 
-const MAX_COMMITTEE: u64 = 1024 * 1024;
+// todo - need to make sure this is ok
+const MAX_COMMITTEE: u64 = MAX_PARENTS as u64;
 
 #[derive(Clone, Debug, Serialize, Deserialize, Copy, PartialOrd, PartialEq)]
 pub struct Stake(pub u64);
