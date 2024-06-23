@@ -175,7 +175,7 @@ mod tests {
     #[tokio::test]
     async fn payload_builder_test() {
         let transactions = vec![vec![1u8, 2], vec![3, 5, 6], vec![7]];
-        let (mut mempool, mut client) = BasicMempool::new();
+        let (mut mempool, client) = BasicMempool::new();
         let _proposal = mempool.make_proposal();
         for transaction in transactions.clone() {
             future::poll_immediate(client.send_transaction(transaction))
@@ -208,9 +208,10 @@ mod tests {
             .unwrap();
         let proposal = mempool.make_proposal();
         let payload = TransactionsPayloadReader::new_verify(proposal).unwrap();
+        let empty: &[u8] = &[];
         assert_eq!(payload.len(), 2);
-        assert_eq!(payload.get_bytes(0).unwrap().as_ref(), &[]);
-        assert_eq!(payload.get_bytes(1).unwrap().as_ref(), &[]);
+        assert_eq!(payload.get_bytes(0).unwrap().as_ref(), empty);
+        assert_eq!(payload.get_bytes(1).unwrap().as_ref(), empty);
 
         let sent = MAX_BLOCK_PAYLOAD / MAX_TRANSACTION + 2;
         assert!(sent < 0xff);

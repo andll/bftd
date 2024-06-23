@@ -1,16 +1,19 @@
+use crate::block::MAX_BLOCK_SIZE;
 use crate::block::{AuthorRound, Block, BlockReference, Round, ValidatorIndex};
 use crate::block_manager::BlockStore;
+use crate::chunk::ChunkCollector;
 use crate::committee::Committee;
 use crate::consensus::{Commit, CommitDecision, UniversalCommitter, UniversalCommitterBuilder};
 use crate::core::{Core, ProposalMaker};
 use crate::crypto::Signer;
 use crate::metrics::Metrics;
 use crate::network::ConnectionPool;
+use crate::network::MAX_MESSAGE;
 use crate::rpc::{
     NetworkRequest, NetworkResponse, NetworkRpc, NetworkRpcRouter, PeerRpcTaskCommand, RpcResult,
 };
 use crate::store::{CommitInterpreter, CommitStore};
-use anyhow::bail;
+use anyhow::{bail, ensure};
 use bytes::Bytes;
 use futures::FutureExt;
 use serde::{Deserialize, Serialize};
@@ -55,6 +58,9 @@ struct SyncerInner<B, F> {
     blocks_sender: mpsc::Sender<Arc<Block>>,
     block_filter: F,
 }
+
+const MAX_CHUNK: usize = MAX_MESSAGE - 128;
+type BlockChunkCollector = ChunkCollector<MAX_CHUNK, MAX_BLOCK_SIZE>;
 
 pub trait Clock: Send + 'static {
     fn time_ns(&self) -> u64;
@@ -395,11 +401,18 @@ impl<B: BlockStore, C: Clock + Clone, F: BlockFilter> PeerRouter<B, C, F> {
                     "Sending {} to {peer_index} age {age_ms} ms",
                     own_block.reference()
                 );
-                let response = StreamRpcResponse::Block(own_block.data().clone());
-                let response = bincode::serialize(&response).expect("Serialization failed");
-                if sender.send(NetworkResponse(response.into())).await.is_err() {
-                    tracing::debug!("Subscription from {peer_index} ended");
-                    return;
+                let chunks = BlockChunkCollector::chunk_block(own_block.data());
+                let chunks_len = chunks.len();
+                for (i, chunk) in chunks.into_iter().enumerate() {
+                    let response = StreamRpcResponse::Chunk(chunk, i == chunks_len - 1);
+                    let response = bincode::serialize(&response).expect("Serialization failed");
+                    if response.len() > MAX_MESSAGE {
+                        panic!("Somehow generated message length {} longer then {MAX_MESSAGE}", response.len());
+                    }
+                    if sender.send(NetworkResponse(response.into())).await.is_err() {
+                        tracing::debug!("Subscription from {peer_index} ended");
+                        return;
+                    }
                 }
             }
             if round_receiver.changed().await.is_err() {
@@ -413,10 +426,21 @@ impl<B: BlockStore, C: Clock + Clone, F: BlockFilter> PeerRouter<B, C, F> {
         mut receiver: mpsc::Receiver<RpcResult<NetworkResponse>>,
         inner: Arc<SyncerInner<B, F>>,
     ) -> anyhow::Result<()> {
-        while let Some(block) = receiver.recv().await {
-            let block = block?;
-            let block = bincode::deserialize::<StreamRpcResponse>(&block.0)?;
-            let StreamRpcResponse::Block(block) = block;
+        let mut chunks = BlockChunkCollector::new();
+        while let Some(response) = receiver.recv().await {
+            let response = response?;
+            let response = bincode::deserialize::<StreamRpcResponse>(&response.0)?;
+            let StreamRpcResponse::Chunk(chunk, last) = response;
+            chunks.try_add(&chunk)?;
+            let block = if last {
+                chunks.take()
+            } else {
+                ensure!(
+                    chunk.len() == MAX_CHUNK,
+                    "Non final chunk should be max size"
+                );
+                continue;
+            };
             let block = inner.parse_verify_block(block, Some(peer))?;
             if inner.blocks_sender.send(block).await.is_err() {
                 break;
@@ -498,7 +522,7 @@ enum RpcResponse {
 
 #[derive(Serialize, Deserialize)]
 enum StreamRpcResponse {
-    Block(Bytes),
+    Chunk(Bytes, bool /*last*/),
 }
 
 impl SystemTimeClock {
