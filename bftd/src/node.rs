@@ -1,3 +1,4 @@
+use crate::load_gen::{LoadGen, LoadGenConfig, LoadGenMetrics};
 use crate::mempool::{BasicMempool, TransactionsPayloadBlockFilter};
 use crate::prometheus::{start_prometheus_server, PrometheusJoinHandle};
 use crate::server::BftdServer;
@@ -17,6 +18,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use tokio::runtime;
 use tokio::runtime::Runtime;
+use tokio::task::JoinHandle;
 
 pub struct Node {
     config: BftdConfig,
@@ -32,6 +34,7 @@ pub struct NodeHandle {
     prometheus_handle: Option<PrometheusJoinHandle>,
     server_handle: Option<BftdServer>,
     runtime: Arc<Runtime>,
+    load_gen_handle: Option<JoinHandle<()>>,
 }
 
 impl Node {
@@ -52,16 +55,20 @@ impl Node {
         })
     }
 
-    pub fn start(self) -> anyhow::Result<NodeHandle> {
+    pub fn start(self, load_gen: Option<LoadGenConfig>) -> anyhow::Result<NodeHandle> {
         let runtime = runtime::Builder::new_multi_thread()
             .enable_all()
             .thread_name(format!("{}", self.config.validator_index))
             .build()
             .unwrap();
         let runtime = Arc::new(runtime);
-        runtime.block_on(self.start_inner(runtime.clone()))
+        runtime.block_on(self.start_inner(runtime.clone(), load_gen))
     }
-    async fn start_inner(self, runtime: Arc<Runtime>) -> anyhow::Result<NodeHandle> {
+    async fn start_inner(
+        self,
+        runtime: Arc<Runtime>,
+        load_gen: Option<LoadGenConfig>,
+    ) -> anyhow::Result<NodeHandle> {
         let committee = self.genesis.make_committee();
         let peers = committee.make_peers_info();
         let bind = if let Some(bind) = self.config.bind.as_ref() {
@@ -117,7 +124,7 @@ impl Node {
             Some(
                 BftdServer::start(
                     http_server_bind,
-                    mempool_client,
+                    mempool_client.clone(),
                     block_store,
                     syncer.clone(),
                 )
@@ -126,11 +133,18 @@ impl Node {
         } else {
             None
         };
+        let load_gen_handle = if let Some(load_gen) = load_gen {
+            let load_gen_metrics = LoadGenMetrics::new_in_registry(&registry);
+            Some(LoadGen::start(load_gen, mempool_client, load_gen_metrics))
+        } else {
+            None
+        };
         Ok(NodeHandle {
             syncer,
             prometheus_handle,
             runtime,
             server_handle,
+            load_gen_handle,
         })
     }
 }

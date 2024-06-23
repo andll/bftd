@@ -1,3 +1,4 @@
+mod load_gen;
 pub mod mempool;
 mod node;
 mod prometheus;
@@ -41,6 +42,8 @@ struct LocalClusterArgs {
 #[derive(Parser, Debug)]
 struct RunArgs {
     dir: PathBuf,
+    #[arg(long, short = 'l')]
+    load_gen: Option<String>,
 }
 
 fn main() {
@@ -96,7 +99,7 @@ fn handle_local_cluster(args: LocalClusterArgs) -> anyhow::Result<()> {
 }
 
 fn handle_run(args: RunArgs) -> anyhow::Result<()> {
-    let _handle = start_node(args.dir)?;
+    let _handle = start_node(args.dir, args.load_gen)?;
     thread::park();
     Ok(())
 }

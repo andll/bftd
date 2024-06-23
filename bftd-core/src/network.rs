@@ -1,4 +1,4 @@
-use crate::block::ValidatorIndex;
+use crate::block::{MAX_BLOCK_SIZE, ValidatorIndex};
 use bytes::Bytes;
 use futures::future::join_all;
 use futures::join;
@@ -19,7 +19,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::{io, select};
 
-const MAX_MESSAGE: usize = 1024;
+const MAX_MESSAGE: usize = MAX_BLOCK_SIZE + 512;
 const INIT_PAYLOAD: [u8; 4] = [10, 15, 32, 5];
 
 // todo

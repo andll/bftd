@@ -1,3 +1,4 @@
+use crate::load_gen::LoadGenConfig;
 use crate::node::{Node, NodeHandle};
 use bftd_core::block::ValidatorIndex;
 use bftd_core::committee::{Stake, ValidatorInfo};
@@ -123,7 +124,7 @@ impl TestCluster {
         }
         let mut handles = Vec::with_capacity(genesis.validators().len());
         for node in nodes {
-            let handle = node.start()?;
+            let handle = node.start(None)?;
             handles.push(handle);
         }
         Ok(handles)
@@ -138,11 +139,13 @@ impl TestCluster {
     }
 }
 
-pub fn start_node(path: PathBuf) -> anyhow::Result<NodeHandle> {
+pub fn start_node(path: PathBuf, load_gen: Option<String>) -> anyhow::Result<NodeHandle> {
+    let load_gen = load_gen.map(|c| LoadGenConfig::parse(&c));
+    let load_gen = load_gen.transpose()?;
     let genesis = Genesis::load(fs::read(TestCluster::genesis_path(&path))?.into())?;
     let genesis = Arc::new(genesis);
     let node = Node::load(&path, genesis)?;
-    let handle = node.start()?;
+    let handle = node.start(load_gen)?;
     Ok(handle)
 }
 

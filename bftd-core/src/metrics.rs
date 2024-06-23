@@ -1,7 +1,4 @@
-use prometheus::{
-    exponential_buckets, register_histogram_with_registry, register_int_counter_with_registry,
-    register_int_gauge_with_registry, Histogram, IntCounter, IntGauge, Registry,
-};
+use prometheus::{exponential_buckets, Histogram, IntCounter, IntGauge, Registry};
 use std::sync::Arc;
 
 pub struct Metrics {
@@ -13,14 +10,17 @@ pub struct Metrics {
     pub rpc_connected_peers: IntGauge,
 }
 
+#[macro_export]
 macro_rules! gauge (
-    ($name:expr, $r:expr) => {register_int_gauge_with_registry!($name, $name, $r).unwrap()};
+    ($name:expr, $r:expr) => {prometheus::register_int_gauge_with_registry!($name, $name, $r).unwrap()};
 );
+#[macro_export]
 macro_rules! counter (
-    ($name:expr, $r:expr) => {register_int_counter_with_registry!($name, $name, $r).unwrap()};
+    ($name:expr, $r:expr) => {prometheus::register_int_counter_with_registry!($name, $name, $r).unwrap()};
 );
+#[macro_export]
 macro_rules! histogram (
-    ($name:expr, $buck:expr, $r:expr) => {register_histogram_with_registry!($name, $name, $buck.unwrap(), $r).unwrap()};
+    ($name:expr, $buck:expr, $r:expr) => {prometheus::register_histogram_with_registry!($name, $name, $buck.unwrap(), $r).unwrap()};
 );
 
 impl Metrics {
