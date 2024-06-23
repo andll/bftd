@@ -2,13 +2,15 @@ use crate::block::ValidatorIndex;
 use bytes::Bytes;
 use futures::future::join_all;
 use futures::join;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, MutexGuard};
 use serde::{Deserialize, Serialize};
 use snow::params::NoiseParams;
 use snow::{HandshakeState, TransportState};
 use std::collections::HashMap;
 use std::fmt;
+use std::future::Future;
 use std::net::SocketAddr;
+use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -543,28 +545,28 @@ impl FrameWriter {
         noise: &mut HandshakeState,
     ) -> NetworkResult<()> {
         assert!(self.transport_state.is_none());
-        let n = noise.write_message(&INIT_PAYLOAD, &mut self.buffer)?;
-        let buf = &self.buffer[..n];
-        Self::write_frame_inner(&mut self.writer, buf).await?;
+        Self::write_frame_inner(&mut self.writer, &mut self.buffer, noise, &INIT_PAYLOAD)?.await?;
         Ok(())
     }
 
     pub async fn write_frame(&mut self, data: &[u8]) -> NetworkResult<()> {
         assert!(data.len() <= MAX_MESSAGE);
-        let n = self
-            .transport_state
-            .as_ref()
-            .unwrap()
-            .lock()
-            .write_message(&data, &mut self.buffer)?;
-        Self::write_frame_inner(&mut self.writer, &self.buffer[..n]).await?;
+        let noise = self.transport_state.as_ref().unwrap().lock();
+        Self::write_frame_inner(&mut self.writer, &mut self.buffer, noise, data)?.await?;
         Ok(())
     }
 
-    async fn write_frame_inner(writer: &mut OwnedWriteHalf, data: &[u8]) -> NetworkResult<()> {
-        writer.write_u32(data.len() as u32).await?;
-        writer.write_all(data).await?;
-        Ok(())
+    fn write_frame_inner<'a>(
+        writer: &'a mut OwnedWriteHalf,
+        buffer: &'a mut [u8],
+        mut noise: impl NoiseWriteMessage,
+        message: &[u8],
+    ) -> NetworkResult<impl Future<Output = io::Result<()>> + 'a> {
+        const HEADER_LEN: usize = 4;
+        let n = noise.write_message(message, &mut buffer[HEADER_LEN..])?;
+        buffer[..HEADER_LEN].copy_from_slice(&(n as u32).to_be_bytes());
+        let buffer = &buffer[..n + HEADER_LEN];
+        Ok(writer.write_all(buffer))
     }
 
     pub fn set_transport_state(&mut self, transport_state: Arc<Mutex<TransportState>>) {
@@ -744,6 +746,22 @@ impl TestConnectionPool {
             .spawn_blocking(move || drop(r))
             .await
             .unwrap();
+    }
+}
+
+trait NoiseWriteMessage {
+    fn write_message(&mut self, source: &[u8], dest: &mut [u8]) -> Result<usize, snow::Error>;
+}
+
+impl NoiseWriteMessage for &mut HandshakeState {
+    fn write_message(&mut self, source: &[u8], dest: &mut [u8]) -> Result<usize, snow::Error> {
+        (*self).write_message(source, dest)
+    }
+}
+
+impl NoiseWriteMessage for MutexGuard<'_, TransportState> {
+    fn write_message(&mut self, source: &[u8], dest: &mut [u8]) -> Result<usize, snow::Error> {
+        self.deref_mut().write_message(source, dest)
     }
 }
 
