@@ -241,6 +241,7 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                 _ = &mut proposal_deadline => {
                     let waiting_round = self.core.vector_clock_round().unwrap_or_default().previous();
                     let timeouts: Vec<_> = waiting_leaders.as_ref().unwrap().iter().map(|l|AuthorRound::new(*l, waiting_round)).collect();
+                    self.metrics.syncer_leader_timeouts.inc();
                     tracing::warn!("Leader timeout {timeouts:?}");
                     self.try_make_proposal();
                     proposal_deadline = futures::future::pending().boxed();
@@ -288,6 +289,12 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
         self.block_store.store_commit(&commit);
         tracing::info!("Committed {}", commit);
         self.last_commit_sender.send(Some(commit.index())).ok();
+        self.metrics
+            .syncer_last_committed_round
+            .set(commit.leader().round().0 as i64);
+        self.metrics
+            .syncer_last_commit_index
+            .set(commit.index() as i64);
         self.last_commit = Some(commit);
     }
 
