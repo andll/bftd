@@ -1,4 +1,4 @@
-use crate::block::{MAX_BLOCK_SIZE, ValidatorIndex};
+use crate::block::ValidatorIndex;
 use bytes::Bytes;
 use futures::future::join_all;
 use futures::join;
@@ -19,7 +19,8 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::{io, select};
 
-const MAX_MESSAGE: usize = MAX_BLOCK_SIZE + 512;
+const BUFFER_SIZE: usize = 65535 /*MAXMSGLEN*/;
+pub const MAX_MESSAGE: usize = BUFFER_SIZE - 16 /*TAGLEN*/;
 const INIT_PAYLOAD: [u8; 4] = [10, 15, 32, 5];
 
 // todo
@@ -319,7 +320,7 @@ impl ConnectionTask {
         while let Some(message) = receiver.recv().await {
             tracing::trace!("Sending {} bytes to {}", message.data.len(), peer.index);
             if let Err(err) = writer.write_frame(&message.data).await {
-                tracing::debug!("Failed to write to {}: {}", peer.public_key, err);
+                tracing::debug!("Failed to write to {}: {}", peer.index, err);
                 return;
             }
         }
@@ -343,7 +344,7 @@ impl ConnectionTask {
                     }
                 }
                 Err(err) => {
-                    tracing::debug!("Failed to read from {}: {}", peer.public_key, err);
+                    tracing::debug!("Failed to read from {}: {}", peer.index, err);
                     return;
                 }
             }
@@ -468,8 +469,8 @@ impl FrameReader {
     pub fn new(reader: OwnedReadHalf) -> Self {
         Self {
             reader,
-            net_buffer: vec![0u8; MAX_MESSAGE].into_boxed_slice(),
-            noise_buffer: vec![0u8; MAX_MESSAGE].into_boxed_slice(),
+            net_buffer: vec![0u8; BUFFER_SIZE].into_boxed_slice(),
+            noise_buffer: vec![0u8; BUFFER_SIZE].into_boxed_slice(),
             transport_state: None,
         }
     }
@@ -532,7 +533,7 @@ impl FrameWriter {
     pub fn new(writer: OwnedWriteHalf) -> Self {
         Self {
             writer,
-            buffer: vec![0u8; MAX_MESSAGE].into_boxed_slice(),
+            buffer: vec![0u8; BUFFER_SIZE].into_boxed_slice(),
             transport_state: None,
         }
     }
@@ -556,7 +557,6 @@ impl FrameWriter {
             .unwrap()
             .lock()
             .write_message(&data, &mut self.buffer)?;
-        // todo - encrypted size can get larger then MAX_MESSAGE
         Self::write_frame_inner(&mut self.writer, &self.buffer[..n]).await?;
         Ok(())
     }
