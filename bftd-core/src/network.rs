@@ -320,7 +320,7 @@ impl ConnectionTask {
         while let Some(message) = receiver.recv().await {
             tracing::trace!("Sending {} bytes to {}", message.data.len(), peer.index);
             if let Err(err) = writer.write_frame(&message.data).await {
-                tracing::debug!("Failed to write to {}: {}", peer.index, err);
+                tracing::warn!("Failed to write to {}: {}", peer.index, err);
                 return;
             }
         }
@@ -344,7 +344,7 @@ impl ConnectionTask {
                     }
                 }
                 Err(err) => {
-                    tracing::debug!("Failed to read from {}: {}", peer.index, err);
+                    tracing::warn!("Failed to read from {}: {}", peer.index, err);
                     return;
                 }
             }
