@@ -1,7 +1,7 @@
 use crate::block::{Block, BlockReference, Round, ValidatorIndex};
 use crate::block_manager::BlockStore;
 use crate::consensus::Commit;
-use sled::{IVec, Mode, Tree};
+use sled::{IVec, Tree};
 use std::collections::HashSet;
 use std::io;
 use std::ops::Deref;
@@ -78,10 +78,7 @@ impl<'a, S: CommitStore + BlockStore> CommitInterpreter<'a, S> {
 
 impl SledStore {
     pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
-        let db = sled::Config::new()
-            .path(path)
-            .mode(Mode::HighThroughput)
-            .open()?;
+        let db = sled::Config::new().path(path).open()?;
         let blocks = db.open_tree("blocks")?;
         let index = db.open_tree("index")?;
         let commits = db.open_tree("commits")?;
