@@ -1,5 +1,6 @@
 use crate::block::{Block, ChainId, Round, ValidatorIndex, MAX_PARENTS};
 use crate::crypto::{Blake2Hasher, Ed25519Verifier};
+use crate::metrics::Metrics;
 use crate::network::{NoisePublicKey, PeerInfo};
 use anyhow::{bail, ensure};
 use bytes::Bytes;
@@ -10,6 +11,7 @@ use std::net::SocketAddr;
 #[cfg(test)]
 use std::net::{IpAddr, Ipv4Addr};
 use std::ops::AddAssign;
+use std::sync::Arc;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Committee {
@@ -56,6 +58,7 @@ impl Committee {
         &self,
         data: Bytes,
         expected_author: Option<ValidatorIndex>,
+        metrics: Arc<Metrics>,
     ) -> anyhow::Result<Block> {
         let author = Block::author_from_bytes(&data)?;
         if let Some(expected_author) = expected_author {
@@ -71,7 +74,7 @@ impl Committee {
         // todo - other validity (thr clock etc)
         // todo check chain_id
         // todo put chain id into network handshake
-        Block::from_bytes(data, &Blake2Hasher, &author.consensus_key)
+        Block::from_bytes(data, &Blake2Hasher, &author.consensus_key, Some(metrics))
     }
 
     pub fn get_stake(&self, index: ValidatorIndex) -> Stake {

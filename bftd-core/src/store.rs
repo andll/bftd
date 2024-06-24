@@ -1,6 +1,7 @@
 use crate::block::{Block, BlockReference, Round, ValidatorIndex};
 use crate::block_manager::BlockStore;
 use crate::consensus::Commit;
+use crate::metrics::Metrics;
 use sled::{IVec, Tree};
 use std::collections::HashSet;
 use std::io;
@@ -13,6 +14,7 @@ pub struct SledStore {
     index: Tree,
     commits: Tree,
     block_commits: Tree,
+    metrics: Arc<Metrics>,
 }
 
 pub trait CommitStore: Send + Sync + 'static {
@@ -77,7 +79,7 @@ impl<'a, S: CommitStore + BlockStore> CommitInterpreter<'a, S> {
 }
 
 impl SledStore {
-    pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
+    pub fn open(path: impl AsRef<Path>, metrics: Arc<Metrics>) -> io::Result<Self> {
         let db = sled::Config::new().path(path).open()?;
         let blocks = db.open_tree("blocks")?;
         let index = db.open_tree("index")?;
@@ -88,12 +90,13 @@ impl SledStore {
             index,
             commits,
             block_commits,
+            metrics,
         })
     }
 
-    fn decode(v: IVec) -> Arc<Block> {
+    fn decode(&self, v: IVec) -> Arc<Block> {
         Arc::new(
-            Block::from_bytes_unchecked(v.to_vec().into())
+            Block::from_bytes_unchecked(v.to_vec().into(), Some(self.metrics.clone()))
                 .expect("Failed to load block from store"),
         )
     }
@@ -123,7 +126,7 @@ impl BlockStore for SledStore {
             .blocks
             .get(&block_key)
             .expect("Storage operation failed")?;
-        Some(Self::decode(block))
+        Some(self.decode(block))
     }
 
     fn get_own(&self, validator: ValidatorIndex, round: Round) -> Option<Arc<Block>> {
@@ -137,7 +140,7 @@ impl BlockStore for SledStore {
             .range(from..to)
             .next()?
             .expect("Storage operation failed");
-        Some(Self::decode(block))
+        Some(self.decode(block))
     }
 
     fn last_known_round(&self, validator: ValidatorIndex) -> Round {
@@ -157,7 +160,7 @@ impl BlockStore for SledStore {
             let Some(block) = block else {
                 continue;
             };
-            return Self::decode(block);
+            return self.decode(block);
         }
         panic!("No blocks found for validator in the storage(should have at least genesis block)");
     }
@@ -175,7 +178,7 @@ impl BlockStore for SledStore {
             .round_author_hash_encoding();
         self.blocks
             .range(from..to)
-            .map(|data| Self::decode(data.expect("Storage operation failed").1))
+            .map(|data| self.decode(data.expect("Storage operation failed").1))
             .collect()
     }
 
@@ -188,7 +191,7 @@ impl BlockStore for SledStore {
             .range(from..to)
             .filter_map(|data| {
                 let block = data.expect("Storage operation failed").1;
-                Some(Self::decode(block))
+                Some(self.decode(block))
             })
             .collect()
     }
@@ -298,7 +301,7 @@ mod tests {
     #[test]
     fn sled_store_test() {
         let dir = TempDir::new("sled_store_test").unwrap();
-        let store = SledStore::open(dir).unwrap();
+        let store = SledStore::open(dir, Metrics::new_test()).unwrap();
         for author in 0..3 {
             for round in 0..(author + 2) {
                 store.put(blk(author, round, vec![]));
@@ -347,7 +350,7 @@ mod tests {
     #[test]
     fn sled_commit_store_test() {
         let dir = TempDir::new("sled_commit_store_test").unwrap();
-        let store = SledStore::open(dir).unwrap();
+        let store = SledStore::open(dir, Metrics::new_test()).unwrap();
         store.store_commit(&c(0, br(1, 1)));
         let last = c(1, br(2, 1));
         store.store_commit(&last);
@@ -361,7 +364,7 @@ mod tests {
     #[test]
     fn commit_interpreter_test() {
         let dir = TempDir::new("commit_interpreter_test").unwrap();
-        let store = SledStore::open(dir).unwrap();
+        let store = SledStore::open(dir, Metrics::new_test()).unwrap();
         store.put(blk(0, 0, vec![]));
         let b0 = blk(1, 0, vec![]);
         store.put(b0.clone());

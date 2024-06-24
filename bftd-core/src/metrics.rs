@@ -5,6 +5,8 @@ use std::sync::Arc;
 
 pub struct Metrics {
     pub block_manager_missing_inverse_len: IntGauge,
+    pub blocks_loaded: IntGauge,
+    pub blocks_loaded_bytes: IntGauge,
     pub core_last_proposed_round: IntGauge,
     pub syncer_last_committed_round: IntGauge,
     pub syncer_last_commit_index: IntGauge,
@@ -53,6 +55,8 @@ impl Metrics {
 
     fn new_inner(registry: &Registry, validator_labels: Vec<String>) -> Arc<Self> {
         Arc::new(Self {
+            blocks_loaded: gauge!("blocks_loaded", registry),
+            blocks_loaded_bytes: gauge!("blocks_loaded_bytes", registry),
             block_manager_missing_inverse_len: gauge!(
                 "block_manager_missing_inverse_len",
                 registry

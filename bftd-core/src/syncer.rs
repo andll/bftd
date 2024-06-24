@@ -54,6 +54,7 @@ struct SyncerInner<B, F> {
     committee: Arc<Committee>,
     blocks_sender: mpsc::Sender<Arc<Block>>,
     block_filter: F,
+    metrics: Arc<Metrics>,
 }
 
 pub trait Clock: Send + 'static {
@@ -102,6 +103,7 @@ impl Syncer {
             blocks_sender,
             committee: committee.clone(),
             block_filter,
+            metrics: metrics.clone(),
         });
         let peer_routers = committee
             .enumerate_validators()
@@ -451,7 +453,9 @@ impl<B, F: BlockFilter> SyncerInner<B, F> {
         data: Bytes,
         expected_author: Option<ValidatorIndex>,
     ) -> anyhow::Result<Arc<Block>> {
-        let block = self.committee.verify_block(data, expected_author)?;
+        let block = self
+            .committee
+            .verify_block(data, expected_author, self.metrics.clone())?;
         let block = Arc::new(block);
         if let Err(err) = self.block_filter.check_block(&block) {
             bail!(

@@ -108,6 +108,7 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
             parents,
             &self.signer,
             &Blake2Hasher,
+            Some(self.metrics.clone()),
         );
         let block = Arc::new(block);
         let result = self.block_manager.add_block(block.clone());

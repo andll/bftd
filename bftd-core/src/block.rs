@@ -1,10 +1,12 @@
 use crate::crypto::{Blake2Hasher, Hasher, SignatureVerifier, Signer};
+use crate::metrics::Metrics;
 use crate::network::MAX_NETWORK_PAYLOAD;
 use anyhow::ensure;
 use bytes::{BufMut, Bytes, BytesMut};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::Add;
+use std::sync::Arc;
 
 pub struct Block {
     reference: BlockReference,
@@ -14,6 +16,7 @@ pub struct Block {
     parents: Vec<BlockReference>,
     payload_offset: usize,
     data: Bytes,
+    metrics: Option<Arc<Metrics>>,
 }
 
 #[derive(Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize)]
@@ -129,6 +132,7 @@ impl Block {
         parents: Vec<BlockReference>,
         signer: &impl Signer,
         hasher: &impl Hasher,
+        metrics: Option<Arc<Metrics>>,
     ) -> Self {
         assert!(parents.len() <= MAX_PARENTS);
         assert!(payload.len() <= MAX_BLOCK_PAYLOAD);
@@ -159,6 +163,8 @@ impl Block {
         data[Self::HASH_OFFSET..Self::HASH_OFFSET + BLOCK_HASH_LENGTH].copy_from_slice(&hash.0);
         let data = data.into();
 
+        Self::metrics_block_created(&metrics, &data);
+
         Self {
             reference: BlockReference {
                 round,
@@ -171,6 +177,7 @@ impl Block {
             parents,
             payload_offset,
             data,
+            metrics,
         }
     }
 
@@ -178,9 +185,10 @@ impl Block {
         data: Bytes,
         hasher: &impl Hasher,
         verifier: &impl SignatureVerifier,
+        metrics: Option<Arc<Metrics>>,
     ) -> anyhow::Result<Self> {
         ensure!(data.len() >= Self::PARENTS_OFFSET, "Block too small");
-        let unverified = Self::from_bytes_unchecked(data)?;
+        let unverified = Self::from_bytes_unchecked(data, metrics)?;
         unverified.verify(hasher, verifier)
     }
 
@@ -201,7 +209,10 @@ impl Block {
         Ok(self)
     }
 
-    pub fn from_bytes_unchecked(data: Bytes) -> anyhow::Result<Self> {
+    pub fn from_bytes_unchecked(
+        data: Bytes,
+        metrics: Option<Arc<Metrics>>,
+    ) -> anyhow::Result<Self> {
         assert!(data.len() >= Self::PARENTS_OFFSET);
         let hash = BlockHash(
             data[Self::HASH_OFFSET..Self::HASH_OFFSET + BLOCK_HASH_LENGTH]
@@ -262,6 +273,7 @@ impl Block {
             author,
             hash,
         };
+        Self::metrics_block_created(&metrics, &data);
         Ok(Self {
             reference,
             signature,
@@ -270,7 +282,15 @@ impl Block {
             parents,
             payload_offset: offset,
             data,
+            metrics,
         })
+    }
+
+    fn metrics_block_created(metrics: &Option<Arc<Metrics>>, data: &Bytes) {
+        if let Some(metrics) = &metrics {
+            metrics.blocks_loaded_bytes.add(data.len() as i64);
+            metrics.blocks_loaded.inc();
+        }
     }
 
     pub fn genesis(chain_id: ChainId, author: ValidatorIndex) -> Self {
@@ -283,7 +303,17 @@ impl Block {
             vec![],
             &EmptySignature,
             &Blake2Hasher,
+            None,
         )
+    }
+}
+
+impl Drop for Block {
+    fn drop(&mut self) {
+        if let Some(metrics) = &self.metrics {
+            metrics.blocks_loaded_bytes.sub(self.data.len() as i64);
+            metrics.blocks_loaded.dec();
+        }
     }
 }
 
@@ -532,9 +562,10 @@ pub mod tests {
             vec![parent],
             &signature,
             &hash,
+            None,
         );
 
-        let block2 = Block::from_bytes_unchecked(block.data().clone()).unwrap();
+        let block2 = Block::from_bytes_unchecked(block.data().clone(), None).unwrap();
         assert_eq!(block2.reference().author, author);
         assert_eq!(block2.reference().round, round);
         assert_eq!(block2.reference().hash.0, hash);
@@ -545,13 +576,13 @@ pub mod tests {
         assert_eq!(block2.parents().get(0).unwrap(), &parent);
         assert_eq!(block2.payload(), &payload);
 
-        assert!(Block::from_bytes(block.data().clone(), &hash, &signature).is_ok());
+        assert!(Block::from_bytes(block.data().clone(), &hash, &signature, None).is_ok());
         let mut data = BytesMut::from(block.data().as_ref());
         data[0] = 5;
-        assert!(Block::from_bytes(data.into(), &hash, &signature).is_err());
+        assert!(Block::from_bytes(data.into(), &hash, &signature, None).is_err());
         let mut data = BytesMut::from(block.data().as_ref());
         data[Block::SIGNATURE_OFFSET + 1] = 5;
-        assert!(Block::from_bytes(data.into(), &hash, &signature).is_err());
+        assert!(Block::from_bytes(data.into(), &hash, &signature, None).is_err());
     }
 
     impl Hasher for [u8; BLOCK_HASH_LENGTH] {
@@ -593,6 +624,7 @@ pub mod tests {
             parents,
             &BR_SIGNATURE,
             &BR_BLOCK_HASH,
+            None,
         ))
     }
 }
