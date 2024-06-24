@@ -4,6 +4,7 @@ use prometheus::{exponential_buckets, Histogram, HistogramVec, IntCounter, IntGa
 use std::sync::Arc;
 
 pub struct Metrics {
+    pub block_manager_missing_inverse_len: IntGauge,
     pub core_last_proposed_round: IntGauge,
     pub syncer_last_committed_round: IntGauge,
     pub syncer_last_commit_index: IntGauge,
@@ -33,6 +34,7 @@ macro_rules! histogram (
 );
 
 impl Metrics {
+    #[cfg(test)]
     pub fn new_test() -> Arc<Self> {
         Self::new_inner(&Registry::default(), vec![])
     }
@@ -51,6 +53,10 @@ impl Metrics {
 
     fn new_inner(registry: &Registry, validator_labels: Vec<String>) -> Arc<Self> {
         Arc::new(Self {
+            block_manager_missing_inverse_len: gauge!(
+                "block_manager_missing_inverse_len",
+                registry
+            ),
             core_last_proposed_round: gauge!("core_last_proposed_round", registry),
             syncer_last_committed_round: gauge!("syncer_last_committed_round", registry),
             syncer_last_commit_index: gauge!("syncer_last_commit_index", registry),

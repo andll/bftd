@@ -41,7 +41,7 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
             latest_blocks.push(last_block);
         }
         let last_proposed_round = block_store.last_known_round(index);
-        let block_manager = BlockManager::new(block_store);
+        let block_manager = BlockManager::new(block_store, metrics.clone());
         let proposer_clock = ThresholdClockAggregator::new(last_proposed_round);
         // todo recover other nodes for parents accumulator?
         let parents_accumulator = ParentsAccumulator::new();

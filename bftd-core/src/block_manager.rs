@@ -1,4 +1,5 @@
 use crate::block::{Block, BlockHash, BlockReference, Round, ValidatorIndex};
+use crate::metrics::Metrics;
 use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Deref;
@@ -7,6 +8,7 @@ use std::sync::Arc;
 pub struct BlockManager<S> {
     missing_inverse: HashMap<BlockReference, HashMap<BlockReference, Arc<Block>>>,
     store: S,
+    metrics: Arc<Metrics>,
 }
 
 pub trait BlockStore: Send + Sync + 'static {
@@ -33,10 +35,11 @@ pub struct AddBlockResult {
 }
 
 impl<S: BlockStore> BlockManager<S> {
-    pub fn new(store: S) -> Self {
+    pub fn new(store: S, metrics: Arc<Metrics>) -> Self {
         Self {
             store,
             missing_inverse: Default::default(),
+            metrics,
         }
     }
 
@@ -58,6 +61,9 @@ impl<S: BlockStore> BlockManager<S> {
                 .collect();
             if missing.is_empty() {
                 let missing_inverse = self.missing_inverse.remove(block.reference());
+                self.metrics
+                    .block_manager_missing_inverse_len
+                    .set(self.missing_inverse.len() as i64);
                 if let Some(missing_inverse) = missing_inverse {
                     for (k, v) in missing_inverse {
                         blocks.insert(k, v);
@@ -75,6 +81,9 @@ impl<S: BlockStore> BlockManager<S> {
                     }
                     let map = entry.or_default();
                     map.insert(*block.reference(), block.clone());
+                    self.metrics
+                        .block_manager_missing_inverse_len
+                        .set(self.missing_inverse.len() as i64);
                 }
             }
         }
@@ -106,7 +115,7 @@ mod tests {
     #[test]
     pub fn block_store_test() {
         let store = Mutex::new(HashMap::new());
-        let mut block_store = BlockManager::new(store);
+        let mut block_store = BlockManager::new(store, Metrics::new_test());
         let r = block_store.add_block(blk(1, 1, vec![br(0, 0), br(1, 0)]));
         r.assert_added_empty();
         r.assert_new_missing(vec![br(0, 0), br(1, 0)]);
@@ -123,6 +132,11 @@ mod tests {
         let r = block_store.add_block(blk(0, 0, vec![]));
         r.assert_added_multi(vec![br(0, 0), br(1, 1), br(2, 2)]);
         r.assert_no_new_missing();
+        assert_eq!(block_store.missing_inverse.len(), 0);
+        assert_eq!(
+            block_store.metrics.block_manager_missing_inverse_len.get(),
+            0
+        );
         assert_eq!(block_store.store.lock().len(), 4);
         assert!(block_store.store.lock().contains_key(&br(0, 0)));
         assert!(block_store.store.lock().contains_key(&br(1, 1)));
