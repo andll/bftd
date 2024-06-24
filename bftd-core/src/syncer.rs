@@ -177,7 +177,7 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                     let Some(block) = block else {return;};
                     let reference = *block.reference();
                     // todo need more block verification
-                    let age_ms = self.clock.time_ns().saturating_sub(block.time_ns()) / 1000 / 1000;
+                    let age_ms = ns_to_ms(self.clock.time_ns().saturating_sub(block.time_ns()));
                     self.metrics.syncer_received_block_age_ms.with_label_values(&[self.metrics.validator_label(block.author())]).observe(age_ms as f64);
                     let add_block_result = self.core.add_block(block);
                     let added_this = add_block_result.added.iter().any(|b|*b.reference() == reference);
@@ -273,6 +273,15 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
             .unwrap_or_default();
         let interpreter = CommitInterpreter::new(&self.block_store);
         let all_blocks = interpreter.interpret_commit(index, leader.clone());
+        for block in &all_blocks {
+            if block.author() == self.core.validator_index() {
+                let age_ns = self.clock.time_ns().saturating_sub(block.time_ns());
+                self.metrics
+                    .syncer_own_block_commit_age_ms
+                    .observe(ns_to_ms(age_ns) as f64);
+            }
+        }
+        let all_blocks = all_blocks.into_iter().map(|b| *b.reference()).collect();
         let previous_timestamp_ns = self
             .last_commit
             .as_ref()
@@ -390,7 +399,7 @@ impl<B: BlockStore, C: Clock + Clone, F: BlockFilter> PeerRouter<B, C, F> {
                 else {
                     continue; // todo - more efficient, iterating through each round right now
                 };
-                let age_ms = clock.time_ns().saturating_sub(own_block.time_ns()) / 1000 / 1000;
+                let age_ms = ns_to_ms(clock.time_ns().saturating_sub(own_block.time_ns()));
                 tracing::debug!(
                     "Sending {} to {peer_index} age {age_ms} ms",
                     own_block.reference()
@@ -527,4 +536,8 @@ impl BlockFilter for () {
     fn check_block(&self, _block: &Arc<Block>) -> anyhow::Result<()> {
         Ok(())
     }
+}
+
+fn ns_to_ms(ns: u64) -> u64 {
+    ns / 1000 / 1000
 }

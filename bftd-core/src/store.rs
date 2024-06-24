@@ -41,11 +41,11 @@ impl<'a, S: CommitStore + BlockStore> CommitInterpreter<'a, S> {
         Self { store }
     }
 
-    pub fn interpret_commit(&self, index: u64, leader: Arc<Block>) -> Vec<BlockReference> {
+    pub fn interpret_commit(&self, index: u64, leader: Arc<Block>) -> Vec<Arc<Block>> {
         let mut blocks = Vec::new();
         self.store.set_block_commit(leader.reference(), index);
         let mut to_inspect = Vec::new();
-        blocks.push(*leader.reference());
+        blocks.push(leader.clone());
         to_inspect.push(leader);
         // todo - keep this between interpreting?
         let mut seen_parents = HashSet::new();
@@ -66,7 +66,7 @@ impl<'a, S: CommitStore + BlockStore> CommitInterpreter<'a, S> {
                 }
                 self.store.set_block_commit(parent, index);
                 let parent = self.store.get(parent).expect("Parent block not found");
-                blocks.push(*parent.reference());
+                blocks.push(parent.clone());
                 to_inspect.push(parent);
             }
         }
@@ -378,16 +378,20 @@ mod tests {
 
         let interpreter = CommitInterpreter::new(&store);
         let c = interpreter.interpret_commit(0, b0);
-        assert_eq!(c, vec![br(1, 0)]);
+        assert_eq!(to_refs(c), vec![br(1, 0)]);
 
         let c = interpreter.interpret_commit(1, b1);
-        assert_eq!(c, vec![br(0, 0), br(1, 1)]);
+        assert_eq!(to_refs(c), vec![br(0, 0), br(1, 1)]);
 
         let c = interpreter.interpret_commit(1, c2);
-        assert_eq!(c, vec![br(0, 0), br(2, 0), br(2, 1), br(3, 2)]);
+        assert_eq!(to_refs(c), vec![br(0, 0), br(2, 0), br(2, 1), br(3, 2)]);
     }
 
     fn c(i: u64, r: BlockReference) -> Commit {
         Commit::new_test(i, r, vec![r])
+    }
+
+    fn to_refs(v: Vec<Arc<Block>>) -> Vec<BlockReference> {
+        v.into_iter().map(|b| *b.reference()).collect()
     }
 }

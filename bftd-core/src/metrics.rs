@@ -1,6 +1,6 @@
 use crate::block::ValidatorIndex;
 use crate::committee::Committee;
-use prometheus::{exponential_buckets, HistogramVec, IntCounter, IntGauge, Registry};
+use prometheus::{exponential_buckets, Histogram, HistogramVec, IntCounter, IntGauge, Registry};
 use std::sync::Arc;
 
 pub struct Metrics {
@@ -9,6 +9,7 @@ pub struct Metrics {
     pub syncer_last_commit_index: IntGauge,
     pub syncer_leader_timeouts: IntCounter,
     pub syncer_received_block_age_ms: HistogramVec,
+    pub syncer_own_block_commit_age_ms: Histogram,
     pub rpc_connected_peers: IntGauge,
     validator_labels: Vec<String>,
 }
@@ -54,6 +55,11 @@ impl Metrics {
             syncer_last_committed_round: gauge!("syncer_last_committed_round", registry),
             syncer_last_commit_index: gauge!("syncer_last_commit_index", registry),
             syncer_leader_timeouts: counter!("syncer_leader_timeouts", registry),
+            syncer_own_block_commit_age_ms: histogram!(
+                "syncer_own_block_commit_age_ms",
+                exponential_buckets(1., 2., 14),
+                registry
+            ),
             syncer_received_block_age_ms: histogram_vec!(
                 "syncer_received_block_age_ms",
                 &["source"],
