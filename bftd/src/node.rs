@@ -8,7 +8,7 @@ use bftd_core::crypto::Ed25519Signer;
 use bftd_core::genesis::Genesis;
 use bftd_core::metrics::Metrics;
 use bftd_core::network::{ConnectionPool, NoisePrivateKey};
-use bftd_core::store::SledStore;
+use bftd_core::store::sled_store::SledStore;
 use bftd_core::syncer::{Syncer, SystemTimeClock};
 use prometheus::Registry;
 use std::fs;
