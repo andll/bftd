@@ -1,4 +1,5 @@
 use crate::crypto::{Blake2Hasher, Hasher, SignatureVerifier, Signer};
+use crate::network::MAX_NETWORK_PAYLOAD;
 use anyhow::ensure;
 use bytes::{BufMut, Bytes, BytesMut};
 use serde::{Deserialize, Serialize};
@@ -45,7 +46,7 @@ pub const MAX_PARENTS: usize = 128;
 
 pub const MAX_BLOCK_PAYLOAD: usize =
     MAX_BLOCK_SIZE - (Block::PARENTS_OFFSET + BlockReference::SIZE * MAX_PARENTS);
-pub const MAX_BLOCK_SIZE: usize = 1024 * 1024;
+pub const MAX_BLOCK_SIZE: usize = MAX_NETWORK_PAYLOAD - 256;
 
 #[derive(Debug, Clone, Copy, PartialOrd, PartialEq, Ord, Eq)]
 pub struct BlockSignature(pub [u8; SIGNATURE_LENGTH]);

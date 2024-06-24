@@ -21,8 +21,14 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::{io, select};
 
-const BUFFER_SIZE: usize = 65535 /*MAXMSGLEN*/;
-pub const MAX_MESSAGE: usize = BUFFER_SIZE - 16 /*TAGLEN*/;
+const MAX_NOISE_MESSAGE: usize = MAX_ENCODED_NOISE_MESSAGE - NOISE_TAG_LEN;
+const NOISE_TAG_LEN: usize = 16;
+const MAX_ENCODED_NOISE_MESSAGE: usize = 65535;
+const MAX_NOISE_CHUNKS: usize = 16;
+const NETWORK_MESSAGE_HEADER_LEN: usize = 4;
+const MAX_ENCRYPTED_MESSAGE: usize = MAX_ENCODED_NOISE_MESSAGE * MAX_NOISE_CHUNKS;
+const WRITE_BUFFER_SIZE: usize = MAX_ENCRYPTED_MESSAGE + NETWORK_MESSAGE_HEADER_LEN;
+pub const MAX_NETWORK_PAYLOAD: usize = MAX_NOISE_MESSAGE * MAX_NOISE_CHUNKS; // ~less than 1 Mb total message
 const INIT_PAYLOAD: [u8; 4] = [10, 15, 32, 5];
 
 // todo
@@ -471,8 +477,8 @@ impl FrameReader {
     pub fn new(reader: OwnedReadHalf) -> Self {
         Self {
             reader,
-            net_buffer: vec![0u8; BUFFER_SIZE].into_boxed_slice(),
-            noise_buffer: vec![0u8; BUFFER_SIZE].into_boxed_slice(),
+            net_buffer: vec![0u8; WRITE_BUFFER_SIZE].into_boxed_slice(),
+            noise_buffer: vec![0u8; WRITE_BUFFER_SIZE].into_boxed_slice(),
             transport_state: None,
         }
     }
@@ -499,7 +505,7 @@ impl FrameReader {
         net_buffer: &'a mut [u8],
     ) -> NetworkResult<&'a [u8]> {
         let l = reader.read_u32().await? as usize;
-        if l > MAX_MESSAGE {
+        if l > MAX_ENCRYPTED_MESSAGE {
             return Err(NetworkError::Protocol(ProtocolError::InvalidLength));
         }
         let data = &mut net_buffer[..l];
@@ -517,12 +523,13 @@ impl FrameReader {
         into: &'a mut [u8],
         transport_state: &Option<Arc<Mutex<TransportState>>>,
     ) -> NetworkResult<&'a [u8]> {
-        let n = transport_state
-            .as_ref()
-            .unwrap()
-            .lock()
-            .read_message(encrypted, into)?;
-        Ok(&into[..n])
+        let mut state = transport_state.as_ref().unwrap().lock();
+        let mut pos = 0usize;
+        for chunk in encrypted.chunks(MAX_ENCODED_NOISE_MESSAGE) {
+            let n = state.read_message(chunk, &mut into[pos..])?;
+            pos += n;
+        }
+        Ok(&into[..pos])
     }
 
     pub fn set_transport_state(&mut self, transport_state: Arc<Mutex<TransportState>>) {
@@ -535,7 +542,7 @@ impl FrameWriter {
     pub fn new(writer: OwnedWriteHalf) -> Self {
         Self {
             writer,
-            buffer: vec![0u8; BUFFER_SIZE].into_boxed_slice(),
+            buffer: vec![0u8; WRITE_BUFFER_SIZE].into_boxed_slice(),
             transport_state: None,
         }
     }
@@ -550,7 +557,7 @@ impl FrameWriter {
     }
 
     pub async fn write_frame(&mut self, data: &[u8]) -> NetworkResult<()> {
-        assert!(data.len() <= MAX_MESSAGE);
+        assert!(data.len() <= MAX_NETWORK_PAYLOAD);
         let noise = self.transport_state.as_ref().unwrap().lock();
         Self::write_frame_inner(&mut self.writer, &mut self.buffer, noise, data)?.await?;
         Ok(())
@@ -562,10 +569,14 @@ impl FrameWriter {
         mut noise: impl NoiseWriteMessage,
         message: &[u8],
     ) -> NetworkResult<impl Future<Output = io::Result<()>> + 'a> {
-        const HEADER_LEN: usize = 4;
-        let n = noise.write_message(message, &mut buffer[HEADER_LEN..])?;
-        buffer[..HEADER_LEN].copy_from_slice(&(n as u32).to_be_bytes());
-        let buffer = &buffer[..n + HEADER_LEN];
+        let mut pos = NETWORK_MESSAGE_HEADER_LEN;
+        for chunk in message.chunks(MAX_NOISE_MESSAGE) {
+            let n = noise.write_message(chunk, &mut buffer[pos..])?;
+            pos += n;
+        }
+        buffer[..NETWORK_MESSAGE_HEADER_LEN]
+            .copy_from_slice(&((pos - NETWORK_MESSAGE_HEADER_LEN) as u32).to_be_bytes());
+        let buffer = &buffer[..pos];
         Ok(writer.write_all(buffer))
     }
 
@@ -799,6 +810,25 @@ mod test {
             .unwrap()
             .unwrap();
         assert_eq!(message.data.as_ref(), &[1, 2, 3]);
+
+        let empty: &[u8] = &[];
+        c1.sender.send(NetworkMessage::new(empty)).await.unwrap();
+        let message = timeout(Duration::from_secs(5), c2.receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(message.data, empty);
+
+        let max_message = Bytes::from(vec![1u8; MAX_NETWORK_PAYLOAD]);
+        c1.sender
+            .send(NetworkMessage::new(max_message.clone()))
+            .await
+            .unwrap();
+        let message = timeout(Duration::from_secs(5), c2.receiver.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(message.data, max_message);
         pool1.shutdown().await;
         pool2.shutdown().await;
         TestConnectionPool::drop_runtimes(runtimes).await;

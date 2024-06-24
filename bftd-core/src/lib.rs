@@ -14,7 +14,6 @@
 
 pub mod block;
 pub mod block_manager;
-mod chunk;
 pub mod committee;
 pub mod config;
 pub mod consensus;
