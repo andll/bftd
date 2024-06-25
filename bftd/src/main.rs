@@ -9,7 +9,7 @@ mod test_cluster;
 use crate::test_cluster::{start_node, TestCluster};
 use anyhow::bail;
 use clap::Parser;
-use std::net::SocketAddr;
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::PathBuf;
 use std::{fs, process, thread};
 use tracing_subscriber::EnvFilter;
@@ -24,7 +24,9 @@ enum Args {
 #[derive(Parser, Debug)]
 struct NewChainArgs {
     name: String,
-    peer_addresses: Vec<SocketAddr>,
+    peer_addresses: Vec<String>,
+    #[arg(long)]
+    no_check_peer_address: bool,
     #[arg(long, short = 'b')]
     bind: Option<String>,
     #[arg(long, short = 'p')]
@@ -78,6 +80,24 @@ fn handle_new_chain(args: NewChainArgs) -> anyhow::Result<()> {
     println!("Peers: {:?}", args.peer_addresses);
     if args.peer_addresses.len() < 4 {
         bail!("Chain must have at least 4 peers");
+    }
+    if args.no_check_peer_address {
+        println!(
+            "--no-check-peer-address specified - not checking if peer addresses can be resolved"
+        );
+    } else {
+        let errs: Vec<_> = args
+            .peer_addresses
+            .iter()
+            .filter_map(|a| a.to_socket_addrs().err().map(|e| (a, e)))
+            .collect();
+        if !errs.is_empty() {
+            println!("Failed to resolve some of the peer addresses(use --no-check-peer-address to skip this check):");
+            for (a, e) in errs {
+                println!("{a}: {e}")
+            }
+            process::exit(1);
+        }
     }
     let test_cluster = TestCluster::generate(
         &args.name,

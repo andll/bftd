@@ -7,9 +7,9 @@ use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::net::SocketAddr;
 #[cfg(test)]
 use std::net::{IpAddr, Ipv4Addr};
+use std::net::{SocketAddr, ToSocketAddrs};
 use std::ops::AddAssign;
 use std::sync::Arc;
 
@@ -32,7 +32,7 @@ pub struct Stake(pub u64);
 pub struct ValidatorInfo {
     pub consensus_key: Ed25519Verifier,
     pub network_key: NoisePublicKey,
-    pub network_address: SocketAddr,
+    pub network_address: String,
     pub stake: Stake,
 }
 
@@ -94,7 +94,7 @@ impl Committee {
         &self.validator(index).network_key
     }
 
-    pub fn network_address(&self, index: ValidatorIndex) -> &SocketAddr {
+    pub fn network_address(&self, index: ValidatorIndex) -> &String {
         &self.validator(index).network_address
     }
 
@@ -132,7 +132,7 @@ impl Committee {
             .iter()
             .enumerate()
             .map(|(index, info)| PeerInfo {
-                address: info.network_address,
+                address: resolve_one(&info.network_address),
                 public_key: info.network_key.clone(),
                 index: ValidatorIndex(index as u64),
             })
@@ -142,6 +142,21 @@ impl Committee {
     pub fn len(&self) -> usize {
         self.validators.len()
     }
+}
+
+pub fn resolve_one(s: &str) -> SocketAddr {
+    let addrs: Vec<_> = s
+        .to_socket_addrs()
+        .expect("Failed to resolve socket address")
+        .collect();
+    if addrs.is_empty() {
+        panic!("{s} did not resolve into any addresses");
+    } else if addrs.len() > 1 {
+        tracing::warn!(
+            "Validator address {s} resolved into multiple addresses. Only one address will be used"
+        );
+    }
+    addrs.into_iter().next().unwrap()
 }
 
 impl Stake {

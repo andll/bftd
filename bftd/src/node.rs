@@ -3,6 +3,7 @@ use crate::load_gen::{LoadGen, LoadGenConfig, LoadGenMetrics};
 use crate::mempool::{BasicMempool, TransactionsPayloadBlockFilter};
 use crate::prometheus::{start_prometheus_server, PrometheusJoinHandle};
 use crate::server::BftdServer;
+use bftd_core::committee::resolve_one;
 use bftd_core::core::Core;
 use bftd_core::crypto::Ed25519Signer;
 use bftd_core::genesis::Genesis;
@@ -75,14 +76,13 @@ impl Node {
             if bind.contains(":") {
                 SocketAddr::from_str(bind).expect("Failed to parse bind address as socket addr")
             } else {
-                let port = committee
-                    .network_address(self.config.validator_index)
-                    .port();
+                let port =
+                    resolve_one(committee.network_address(self.config.validator_index)).port();
                 let addr = IpAddr::from_str(bind).expect("Failed to parse bind address as ip addr");
                 SocketAddr::new(addr, port)
             }
         } else {
-            *committee.network_address(self.config.validator_index)
+            resolve_one(committee.network_address(self.config.validator_index))
         };
 
         let pool = ConnectionPool::start(

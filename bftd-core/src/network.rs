@@ -36,6 +36,8 @@ const INIT_PAYLOAD: [u8; 4] = [10, 15, 32, 5];
 // measure ping
 // spawn for handshake
 // improve task tracking
+// resolve periodically on reconnect
+// noise re-cipher
 pub struct ConnectionPool {
     acceptor_task: JoinHandle<io::Result<()>>,
     connections: mpsc::Receiver<Connection>,

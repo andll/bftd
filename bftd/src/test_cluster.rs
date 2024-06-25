@@ -24,7 +24,7 @@ pub struct TestCluster {
 impl TestCluster {
     pub fn generate(
         name: &str,
-        peer_addresses: Vec<SocketAddr>,
+        peer_addresses: Vec<String>,
         bind: Option<String>,
         prometheus_bind: Option<SocketAddr>,
         http_server_bind: Option<SocketAddr>,
