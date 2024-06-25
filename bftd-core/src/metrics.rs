@@ -8,6 +8,7 @@ pub struct Metrics {
     pub blocks_loaded: IntGauge,
     pub blocks_loaded_bytes: IntGauge,
     pub core_last_proposed_round: IntGauge,
+    pub core_last_proposed_block_size: IntGauge,
     pub syncer_last_committed_round: IntGauge,
     pub syncer_last_commit_index: IntGauge,
     pub syncer_leader_timeouts: IntCounter,
@@ -62,6 +63,7 @@ impl Metrics {
                 registry
             ),
             core_last_proposed_round: gauge!("core_last_proposed_round", registry),
+            core_last_proposed_block_size: gauge!("core_last_proposed_block_size", registry),
             syncer_last_committed_round: gauge!("syncer_last_committed_round", registry),
             syncer_last_commit_index: gauge!("syncer_last_commit_index", registry),
             syncer_leader_timeouts: counter!("syncer_leader_timeouts", registry),
