@@ -282,7 +282,12 @@ impl PeerTask {
         peer: &PeerInfo,
         pk: &NoisePrivateKey,
     ) -> NetworkResult<NoiseConnection> {
-        let socket = TcpSocket::new_v4().expect("Failed to create socket");
+        let socket = if peer.address.is_ipv4() {
+            TcpSocket::new_v4()
+        } else {
+            TcpSocket::new_v6()
+        };
+        let socket = socket.expect("Failed to create socket");
         socket.set_nodelay(true).expect("Failed to set nodelay");
         let socket = socket.connect(peer.address).await?;
         let handshake = Handshake {
