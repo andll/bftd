@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use std::ops::Deref;
 use std::sync::Arc;
 
+mod rocks_store;
 pub mod sled_store;
 
 pub trait CommitStore: Send + Sync + 'static {

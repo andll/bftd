@@ -112,7 +112,7 @@ impl Block {
 
     pub fn author_from_bytes(data: &[u8]) -> anyhow::Result<ValidatorIndex> {
         ensure!(data.len() >= Self::PARENTS_OFFSET, "Block too small");
-        Ok(ValidatorIndex(u64::from_le_bytes(
+        Ok(ValidatorIndex(u64::from_be_bytes(
             data[Self::AUTHOR_OFFSET..Self::AUTHOR_OFFSET + 8]
                 .try_into()
                 .unwrap(),
@@ -141,11 +141,11 @@ impl Block {
         let mut data = BytesMut::with_capacity(payload.len() + payload_offset);
         data.put_bytes(0, Self::ROUND_OFFSET);
         // todo change all encoding to be
-        data.put_u64_le(round.0);
-        data.put_u64_le(author.0);
+        data.put_u64(round.0);
+        data.put_u64(author.0);
         data.put_slice(&chain_id.0);
-        data.put_u64_le(time_ns);
-        data.put_u32_le(parents.len() as u32);
+        data.put_u64(time_ns);
+        data.put_u32(parents.len() as u32);
         for parent in &parents {
             assert!(
                 parent.round < round,
@@ -224,12 +224,12 @@ impl Block {
                 .try_into()
                 .unwrap(),
         );
-        let round = Round(u64::from_le_bytes(
+        let round = Round(u64::from_be_bytes(
             data[Self::ROUND_OFFSET..Self::ROUND_OFFSET + 8]
                 .try_into()
                 .unwrap(),
         ));
-        let author = ValidatorIndex(u64::from_le_bytes(
+        let author = ValidatorIndex(u64::from_be_bytes(
             data[Self::AUTHOR_OFFSET..Self::AUTHOR_OFFSET + 8]
                 .try_into()
                 .unwrap(),
@@ -239,12 +239,12 @@ impl Block {
                 .try_into()
                 .unwrap(),
         );
-        let time_ns = u64::from_le_bytes(
+        let time_ns = u64::from_be_bytes(
             data[Self::TIME_OFFSET..Self::TIME_OFFSET + 8]
                 .try_into()
                 .unwrap(),
         );
-        let parents_count = u32::from_le_bytes(
+        let parents_count = u32::from_be_bytes(
             data[Self::PARENTS_COUNT_OFFSET..Self::PARENTS_COUNT_OFFSET + 4]
                 .try_into()
                 .unwrap(),
@@ -342,12 +342,12 @@ impl BlockReference {
 
     pub fn from_bytes(bytes: &[u8; Self::SIZE]) -> Self {
         // todo change to be bytes
-        let round = Round(u64::from_le_bytes(
+        let round = Round(u64::from_be_bytes(
             bytes[Self::ROUND_OFFSET..Self::ROUND_OFFSET + 8]
                 .try_into()
                 .unwrap(),
         ));
-        let author = ValidatorIndex(u64::from_le_bytes(
+        let author = ValidatorIndex(u64::from_be_bytes(
             bytes[Self::AUTHOR_OFFSET..Self::AUTHOR_OFFSET + 8]
                 .try_into()
                 .unwrap(),
@@ -365,8 +365,8 @@ impl BlockReference {
     }
 
     pub fn write(&self, buf: &mut BytesMut) {
-        buf.put_u64_le(self.round.0);
-        buf.put_u64_le(self.author.0);
+        buf.put_u64(self.round.0);
+        buf.put_u64(self.author.0);
         buf.put_slice(&self.hash.0);
     }
 
