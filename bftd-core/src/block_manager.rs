@@ -48,6 +48,7 @@ impl<S: BlockStore> BlockManager<S> {
                     .block_manager_missing_inverse_len
                     .set(self.missing_inverse.len() as i64);
                 if let Some(missing_inverse) = missing_inverse {
+                    // todo - need to be a bit smart about it to skip blocks that aren't ready yet
                     for (k, v) in missing_inverse {
                         blocks.insert(k, v);
                     }
