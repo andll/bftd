@@ -169,17 +169,21 @@ impl Syncer {
 impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
     SyncerTask<S, B, C, P>
 {
+    const STALL_TIMEOUT: Duration = Duration::from_secs(15);
+
     pub async fn run(mut self) {
         self.try_make_proposal();
         let (mut committed, mut skipped) = (0usize, 0usize);
         let mut proposal_deadline: Pin<Box<dyn Future<Output = ()> + Send>> =
             futures::future::pending().boxed();
         let mut proposal_deadline_set = false;
+        let mut stall_deadline = Instant::now() + Self::STALL_TIMEOUT;
         let mut waiting_leaders: Option<Vec<ValidatorIndex>> = None;
         self.rpc.wait_connected(Duration::from_secs(2)).await;
         loop {
             select! {
                 block = self.blocks_receiver.recv() => {
+                    stall_deadline = Instant::now() + Self::STALL_TIMEOUT;
                     let _timer = self.metrics.syncer_main_loop_util_ns.utilization_timer();
                     self.metrics.syncer_main_loop_calls.inc();
                     let Some(block) = block else {return;};
@@ -229,10 +233,6 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                                 waiting_leaders = Some(leaders);
                             }
                         }
-                    } else {
-                        let missing = self.core.missing_validators_for_proposal();
-                        let round = self.core.last_proposed_round();
-                        tracing::debug!("Still waiting for validators {missing:?} at round {round}");
                     }
                     let commits = self.committer.try_commit(self.last_decided, self.last_known_round);
                     for c in commits {
@@ -262,6 +262,11 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                     proposal_deadline = futures::future::pending().boxed();
                     proposal_deadline_set = false;
                     waiting_leaders = None;
+                }
+                _ = tokio::time::sleep_until(stall_deadline) => {
+                    let missing = self.core.missing_validators_for_proposal();
+                    let round = self.core.last_proposed_round();
+                    tracing::warn!("No activity for {} seconds. Still waiting for validators {missing:?} at round {round}", Self::STALL_TIMEOUT.as_secs());
                 }
                 _ = &mut self.stop => {
                     break;
