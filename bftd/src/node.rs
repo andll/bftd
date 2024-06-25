@@ -8,7 +8,7 @@ use bftd_core::crypto::Ed25519Signer;
 use bftd_core::genesis::Genesis;
 use bftd_core::metrics::Metrics;
 use bftd_core::network::{ConnectionPool, NoisePrivateKey};
-use bftd_core::store::sled_store::SledStore;
+use bftd_core::store::rocks_store::RocksStore;
 use bftd_core::syncer::{Syncer, SystemTimeClock};
 use prometheus::Registry;
 use std::fs;
@@ -94,7 +94,7 @@ impl Node {
         .await?;
         let registry = Registry::new();
         let metrics = Metrics::new_in_registry(&registry, &committee);
-        let block_store = SledStore::open(&self.storage_path, metrics.clone())?;
+        let block_store = RocksStore::open(&self.storage_path, metrics.clone())?;
         let block_store = Arc::new(block_store);
         let prometheus_handle = if let Some(prometheus_bind) = self.config.prometheus_bind {
             Some(start_prometheus_server(prometheus_bind, &registry).await?)

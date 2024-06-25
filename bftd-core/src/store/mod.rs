@@ -5,7 +5,8 @@ use std::collections::HashSet;
 use std::ops::Deref;
 use std::sync::Arc;
 
-mod rocks_store;
+pub mod rocks_store;
+#[cfg(feature = "sled_store")]
 pub mod sled_store;
 
 pub trait CommitStore: Send + Sync + 'static {
@@ -97,14 +98,14 @@ mod tests {
     use crate::block::tests::{blk, br};
     use crate::block::{Block, BlockReference};
     use crate::metrics::Metrics;
-    use crate::store::sled_store::SledStore;
     use std::sync::Arc;
     use tempdir::TempDir;
+    use crate::store::rocks_store::RocksStore;
 
     #[test]
     fn commit_interpreter_test() {
         let dir = TempDir::new("commit_interpreter_test").unwrap();
-        let store = SledStore::open(dir, Metrics::new_test()).unwrap();
+        let store = RocksStore::open(dir, Metrics::new_test()).unwrap();
         store.put(blk(0, 0, vec![]));
         let b0 = blk(1, 0, vec![]);
         store.put(b0.clone());

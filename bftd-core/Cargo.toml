@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-sled = "0.34.7"
+sled = { version = "0.34.7", optional = true }
 tokio = {version="1.38.0", features = ["full"]}
 snow = "0.9.6"
 parking_lot = "0.12.3"
@@ -29,3 +29,6 @@ rocksdb = { version = "0.22.0" ,features = []}
 [dev-dependencies]
 tempdir = "0.3.7"
 tracing-subscriber = { version = "0.3.18",features = ["env-filter"] }
+
+[features]
+sled_store = ["sled"]
