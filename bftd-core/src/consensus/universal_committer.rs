@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::block::{AuthorRound, Round, ValidatorIndex};
-use crate::block_manager::BlockStore;
 use crate::committee::Committee;
 use crate::consensus::base_committer::BaseCommitterOptions;
+use crate::store::BlockStore;
 use std::{collections::VecDeque, sync::Arc};
 
 use super::{base_committer::BaseCommitter, CommitDecision, LeaderStatus, DEFAULT_WAVE_LENGTH};

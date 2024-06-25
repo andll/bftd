@@ -1,8 +1,9 @@
 use crate::block::{Block, BlockReference, ChainId, Round, ValidatorIndex};
-use crate::block_manager::{AddBlockResult, BlockManager, BlockStore};
+use crate::block_manager::{AddBlockResult, BlockManager};
 use crate::committee::Committee;
 use crate::crypto::{Blake2Hasher, Signer};
 use crate::metrics::Metrics;
+use crate::store::BlockStore;
 use crate::threshold_clock::ThresholdClockAggregator;
 use bytes::Bytes;
 use std::collections::{BTreeMap, BTreeSet, HashSet};

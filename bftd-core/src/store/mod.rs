@@ -1,7 +1,6 @@
-use crate::block::{Block, BlockReference};
-use crate::block_manager::BlockStore;
+use crate::block::{Block, BlockHash, BlockReference, Round, ValidatorIndex};
 use crate::consensus::Commit;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -132,3 +131,170 @@ mod tests {
         v.into_iter().map(|b| *b.reference()).collect()
     }
 }
+
+pub trait BlockStore: Send + Sync + 'static {
+    fn put(&self, block: Arc<Block>);
+    fn flush(&self);
+    fn get(&self, key: &BlockReference) -> Option<Arc<Block>>;
+    fn get_own(&self, validator: ValidatorIndex, round: Round) -> Option<Arc<Block>>;
+    fn last_known_round(&self, validator: ValidatorIndex) -> Round;
+    fn last_known_block(&self, validator: ValidatorIndex) -> Arc<Block>;
+    fn exists(&self, key: &BlockReference) -> bool;
+
+    fn get_blocks_by_round(&self, round: Round) -> Vec<Arc<Block>>;
+    fn get_blocks_at_author_round(&self, author: ValidatorIndex, round: Round) -> Vec<Arc<Block>>;
+
+    // Returns all the ancestors of the later_block to the `earlier_round`, assuming that there is
+    // a path to them.
+    fn linked_to_round(&self, block: &Arc<Block>, round: Round) -> Vec<Arc<Block>>;
+}
+
+impl BlockStore for MemoryBlockStore {
+    fn put(&self, block: Arc<Block>) {
+        self.write()
+            .entry(block.round())
+            .or_default()
+            .insert((block.author(), *block.block_hash()), block);
+    }
+
+    fn flush(&self) {}
+
+    fn get(&self, key: &BlockReference) -> Option<Arc<Block>> {
+        self.read()
+            .get(&key.round)?
+            .get(&(key.author, key.hash))
+            .cloned()
+    }
+
+    fn get_own(&self, validator: ValidatorIndex, round: Round) -> Option<Arc<Block>> {
+        Some(
+            self.read()
+                .get(&round)?
+                .range((validator, BlockHash::MIN)..(validator, BlockHash::MAX))
+                .next()?
+                .1
+                .clone(),
+        )
+    }
+
+    fn last_known_round(&self, validator: ValidatorIndex) -> Round {
+        self.last_known_block(validator).round()
+    }
+
+    fn last_known_block(&self, validator: ValidatorIndex) -> Arc<Block> {
+        // todo performance
+        let lock = self.read();
+        for (_round, map) in lock.iter().rev() {
+            if let Some((_, block)) = map
+                .range((validator, BlockHash::MIN)..(validator, BlockHash::MAX))
+                .next()
+            {
+                return block.clone();
+            }
+        }
+        panic!("Should have at least one block for each validator");
+    }
+
+    fn exists(&self, key: &BlockReference) -> bool {
+        let lock = self.read();
+        let m = lock.get(&key.round);
+        match m {
+            Some(map) => map.contains_key(&(key.author, key.hash)),
+            None => false,
+        }
+    }
+
+    fn get_blocks_by_round(&self, round: Round) -> Vec<Arc<Block>> {
+        let lock = self.read();
+        if let Some(map) = lock.get(&round) {
+            // todo - is cloning a good idea here?
+            map.values().cloned().collect()
+        } else {
+            vec![]
+        }
+    }
+
+    fn get_blocks_at_author_round(&self, author: ValidatorIndex, round: Round) -> Vec<Arc<Block>> {
+        let lock = self.read();
+        if let Some(map) = lock.get(&round) {
+            // todo - is cloning a good idea here?
+            map.range((author, BlockHash::MIN)..(author, BlockHash::MAX))
+                .map(|(_, b)| b.clone())
+                .collect()
+        } else {
+            vec![]
+        }
+    }
+
+    fn linked_to_round(&self, block: &Arc<Block>, round: Round) -> Vec<Arc<Block>> {
+        let lock = self.read();
+        let mut parents = vec![block.clone()];
+        for r in (round.0..block.round().0).rev() {
+            let r = Round(r);
+            let map = lock.get(&r);
+            let Some(map) = map else { return vec![] };
+            parents = map
+                .iter()
+                .filter_map(|(_, block)| {
+                    if parents
+                        .iter()
+                        .any(|x| x.parents().contains(block.reference()))
+                    {
+                        Some(block.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if parents.is_empty() {
+                break;
+            }
+        }
+        parents
+    }
+}
+
+impl<T: BlockStore> BlockStore for Arc<T> {
+    fn put(&self, block: Arc<Block>) {
+        self.deref().put(block)
+    }
+
+    fn flush(&self) {
+        self.deref().flush()
+    }
+
+    fn get(&self, key: &BlockReference) -> Option<Arc<Block>> {
+        self.deref().get(key)
+    }
+
+    fn get_own(&self, validator: ValidatorIndex, round: Round) -> Option<Arc<Block>> {
+        self.deref().get_own(validator, round)
+    }
+
+    fn last_known_round(&self, validator: ValidatorIndex) -> Round {
+        self.deref().last_known_round(validator)
+    }
+
+    fn last_known_block(&self, validator: ValidatorIndex) -> Arc<Block> {
+        self.deref().last_known_block(validator)
+    }
+
+    fn exists(&self, key: &BlockReference) -> bool {
+        self.deref().exists(key)
+    }
+
+    fn get_blocks_by_round(&self, round: Round) -> Vec<Arc<Block>> {
+        self.deref().get_blocks_by_round(round)
+    }
+
+    fn get_blocks_at_author_round(&self, author: ValidatorIndex, round: Round) -> Vec<Arc<Block>> {
+        self.deref().get_blocks_at_author_round(author, round)
+    }
+
+    fn linked_to_round(&self, block: &Arc<Block>, round: Round) -> Vec<Arc<Block>> {
+        self.deref().linked_to_round(block, round)
+    }
+}
+
+pub type MemoryBlockStore =
+    parking_lot::RwLock<BTreeMap<Round, BTreeMap<(ValidatorIndex, BlockHash), Arc<Block>>>>;

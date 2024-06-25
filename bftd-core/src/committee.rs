@@ -7,8 +7,6 @@ use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::hash::{Hash, Hasher};
-#[cfg(test)]
-use std::net::{IpAddr, Ipv4Addr};
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::ops::AddAssign;
 use std::sync::Arc;
@@ -182,7 +180,7 @@ impl Committee {
                 .map(|stake| ValidatorInfo {
                     consensus_key: Default::default(),
                     network_key: Default::default(),
-                    network_address: SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
+                    network_address: "0.0.0.0:0".to_string(),
                     stake: Stake(stake),
                 })
                 .collect(),

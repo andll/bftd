@@ -1,5 +1,4 @@
 use crate::block::{AuthorRound, Block, BlockReference, Round, ValidatorIndex};
-use crate::block_manager::BlockStore;
 use crate::committee::Committee;
 use crate::consensus::{Commit, CommitDecision, UniversalCommitter, UniversalCommitterBuilder};
 use crate::core::{Core, ProposalMaker};
@@ -9,6 +8,7 @@ use crate::network::ConnectionPool;
 use crate::rpc::{
     NetworkRequest, NetworkResponse, NetworkRpc, NetworkRpcRouter, PeerRpcTaskCommand, RpcResult,
 };
+use crate::store::BlockStore;
 use crate::store::{CommitInterpreter, CommitStore};
 use anyhow::bail;
 use bytes::Bytes;

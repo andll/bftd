@@ -1,7 +1,7 @@
 use crate::block::{Block, BlockReference, Round, ValidatorIndex};
-use crate::block_manager::BlockStore;
 use crate::consensus::Commit;
 use crate::metrics::Metrics;
+use crate::store::BlockStore;
 use crate::store::CommitStore;
 use sled::{IVec, Tree};
 use std::io;
