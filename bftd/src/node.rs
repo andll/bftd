@@ -73,7 +73,8 @@ impl Node {
         let committee = self.genesis.make_committee();
         let peers = committee.make_peers_info();
         let bind = if let Some(bind) = self.config.bind.as_ref() {
-            if bind.contains(":") {
+            // todo - better detection between SocketAddr and IpAddr
+            if bind.contains(":") && bind != "::" {
                 SocketAddr::from_str(bind).expect("Failed to parse bind address as socket addr")
             } else {
                 let port =
