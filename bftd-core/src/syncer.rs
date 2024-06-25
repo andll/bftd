@@ -4,7 +4,7 @@ use crate::committee::Committee;
 use crate::consensus::{Commit, CommitDecision, UniversalCommitter, UniversalCommitterBuilder};
 use crate::core::{Core, ProposalMaker};
 use crate::crypto::Signer;
-use crate::metrics::Metrics;
+use crate::metrics::{Metrics, UtilizationTimerExt};
 use crate::network::ConnectionPool;
 use crate::rpc::{
     NetworkRequest, NetworkResponse, NetworkRpc, NetworkRpcRouter, PeerRpcTaskCommand, RpcResult,
@@ -180,6 +180,8 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
         loop {
             select! {
                 block = self.blocks_receiver.recv() => {
+                    let _timer = self.metrics.syncer_main_loop_util_ns.utilization_timer();
+                    self.metrics.syncer_main_loop_calls.inc();
                     let Some(block) = block else {return;};
                     let reference = *block.reference();
                     // todo need more block verification
@@ -250,6 +252,8 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                     }
                 }
                 _ = &mut proposal_deadline => {
+                    let _timer = self.metrics.syncer_main_loop_util_ns.utilization_timer();
+                    self.metrics.syncer_main_loop_calls.inc();
                     let waiting_round = self.core.vector_clock_round().unwrap_or_default().previous();
                     let timeouts: Vec<_> = waiting_leaders.as_ref().unwrap().iter().map(|l|AuthorRound::new(*l, waiting_round)).collect();
                     self.metrics.syncer_leader_timeouts.inc();

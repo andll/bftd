@@ -2,6 +2,7 @@ use crate::block::ValidatorIndex;
 use crate::committee::Committee;
 use prometheus::{exponential_buckets, Histogram, HistogramVec, IntCounter, IntGauge, Registry};
 use std::sync::Arc;
+use std::time::Instant;
 
 pub struct Metrics {
     pub block_manager_missing_inverse_len: IntGauge,
@@ -14,6 +15,8 @@ pub struct Metrics {
     pub syncer_leader_timeouts: IntCounter,
     pub syncer_received_block_age_ms: HistogramVec,
     pub syncer_own_block_commit_age_ms: Histogram,
+    pub syncer_main_loop_util_ns: IntCounter,
+    pub syncer_main_loop_calls: IntCounter,
     pub rpc_connected_peers: IntGauge,
     validator_labels: Vec<String>,
 }
@@ -78,8 +81,39 @@ impl Metrics {
                 exponential_buckets(1., 2., 14),
                 registry
             ),
+            syncer_main_loop_util_ns: counter!("syncer_main_loop_util_ns", registry),
+            syncer_main_loop_calls: counter!("syncer_main_loop_calls", registry),
             rpc_connected_peers: gauge!("rpc_connected_peers", registry),
             validator_labels,
         })
+    }
+}
+
+pub struct UtilizationTimer {
+    counter: IntCounter,
+    start: Instant,
+}
+
+impl UtilizationTimer {
+    pub fn new(counter: &IntCounter) -> Self {
+        let start = Instant::now();
+        let counter = counter.clone();
+        Self { counter, start }
+    }
+}
+
+impl Drop for UtilizationTimer {
+    fn drop(&mut self) {
+        self.counter.inc_by(self.start.elapsed().as_nanos() as u64);
+    }
+}
+
+pub trait UtilizationTimerExt {
+    fn utilization_timer(&self) -> UtilizationTimer;
+}
+
+impl UtilizationTimerExt for IntCounter {
+    fn utilization_timer(&self) -> UtilizationTimer {
+        UtilizationTimer::new(self)
     }
 }

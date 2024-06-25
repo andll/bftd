@@ -117,7 +117,9 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
         self.blocks_inserted(&result.added);
         self.last_proposed_round = round;
         self.metrics.core_last_proposed_round.set(round.0 as i64);
-        self.metrics.core_last_proposed_block_size.set(block.data().len() as i64);
+        self.metrics
+            .core_last_proposed_block_size
+            .set(block.data().len() as i64);
         block
     }
 
