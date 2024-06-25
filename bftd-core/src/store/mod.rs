@@ -98,9 +98,9 @@ mod tests {
     use crate::block::tests::{blk, br};
     use crate::block::{Block, BlockReference};
     use crate::metrics::Metrics;
+    use crate::store::rocks_store::RocksStore;
     use std::sync::Arc;
     use tempdir::TempDir;
-    use crate::store::rocks_store::RocksStore;
 
     #[test]
     fn commit_interpreter_test() {

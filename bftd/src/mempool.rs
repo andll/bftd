@@ -16,10 +16,12 @@ pub struct BasicMempoolClient {
 }
 
 pub const MAX_TRANSACTION: usize = 10 * 1024;
+const TRANSACTION_SIZE_EXPECTED: usize = 256;
+const TRANSACTIONS_PER_BLOCK_EXPECTED: usize = MAX_BLOCK_PAYLOAD / TRANSACTION_SIZE_EXPECTED;
 
 impl BasicMempool {
     pub fn new() -> (BasicMempool, BasicMempoolClient) {
-        let (sender, receiver) = mpsc::channel(10 * 1000);
+        let (sender, receiver) = mpsc::channel(TRANSACTIONS_PER_BLOCK_EXPECTED * 2);
         let mempool = BasicMempool {
             receiver,
             last_transaction: None,
@@ -217,9 +219,9 @@ mod tests {
         assert!(sent < 0xff);
         for i in 0..sent {
             let t = vec![i as u8; MAX_TRANSACTION];
-            future::poll_immediate(client.send_transaction(t.clone()))
+            client
+                .send_transaction(t.clone())
                 .await
-                .unwrap()
                 .map_err(|_| ())
                 .unwrap();
         }
