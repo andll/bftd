@@ -72,9 +72,13 @@ impl Committee {
             bail!("Validator not found")
         };
         // todo - other validity (thr clock etc)
-        // todo check chain_id
         // todo put chain id into network handshake
-        Block::from_bytes(data, &Blake2Hasher, &author.consensus_key, Some(metrics))
+        let block = Block::from_bytes(data, &Blake2Hasher, &author.consensus_key, Some(metrics))?;
+        ensure!(
+            &self.chain_id == block.chain_id(),
+            "Received block from a different chain"
+        );
+        Ok(block)
     }
 
     pub fn get_stake(&self, index: ValidatorIndex) -> Stake {
