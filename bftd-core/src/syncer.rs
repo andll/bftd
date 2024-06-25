@@ -45,6 +45,7 @@ struct SyncerTask<S, B, C, P> {
     clock: C,
     metrics: Arc<Metrics>,
     last_commit_sender: watch::Sender<Option<u64>>,
+    last_known_round: Round,
 }
 
 struct SyncerInner<B, F> {
@@ -93,8 +94,10 @@ impl Syncer {
             .with_number_of_leaders(1)
             .build();
         let validator_index = core.validator_index();
+        let last_proposed_round = core.last_proposed_round();
         let (last_proposed_round_sender, last_proposed_round_receiver) =
-            watch::channel(core.last_proposed_round());
+            watch::channel(last_proposed_round);
+        let last_known_round = last_proposed_round;
         let (blocks_sender, blocks_receiver) = mpsc::channel(10);
         let inner = Arc::new(SyncerInner {
             block_store: block_store.clone(),
@@ -143,6 +146,7 @@ impl Syncer {
             clock,
             metrics,
             last_commit_sender,
+            last_known_round,
         };
         let handle = tokio::spawn(syncer.run());
         Syncer {
@@ -189,6 +193,11 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                     } else {
                         format!("(missing parents new {:?}, old {:?})", add_block_result.new_missing, add_block_result.previously_missing)
                     });
+                    // todo add max_round as a field to AddBlockResult, avoid iteration
+                    let max_round = add_block_result.added.iter().map(|b|b.round()).max();
+                    if let Some(max_round) = max_round {
+                        self.last_known_round = cmp::max(self.last_known_round, max_round);
+                    }
                     // todo handle missing blocks
                     if let Some(next_proposal_round) = self.core.vector_clock_round() {
                         let check_round = next_proposal_round.previous();
@@ -223,7 +232,7 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                         let round = self.core.last_proposed_round();
                         tracing::debug!("Still waiting for validators {missing:?} at round {round}");
                     }
-                    let commits = self.committer.try_commit(self.last_decided, *self.last_proposed_round_sender.borrow());
+                    let commits = self.committer.try_commit(self.last_decided, self.last_known_round);
                     for c in commits {
                         self.last_decided = c.author_round();
                         self.put_commit(&c);
