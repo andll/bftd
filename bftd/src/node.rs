@@ -1,8 +1,8 @@
+use crate::config::BftdConfig;
 use crate::load_gen::{LoadGen, LoadGenConfig, LoadGenMetrics};
 use crate::mempool::{BasicMempool, TransactionsPayloadBlockFilter};
 use crate::prometheus::{start_prometheus_server, PrometheusJoinHandle};
 use crate::server::BftdServer;
-use bftd_core::config::BftdConfig;
 use bftd_core::core::Core;
 use bftd_core::crypto::Ed25519Signer;
 use bftd_core::genesis::Genesis;

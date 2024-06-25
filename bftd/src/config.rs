@@ -1,4 +1,4 @@
-use crate::block::ValidatorIndex;
+use bftd_core::block::ValidatorIndex;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 

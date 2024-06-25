@@ -1,8 +1,8 @@
+use crate::config::BftdConfig;
 use crate::load_gen::LoadGenConfig;
 use crate::node::{Node, NodeHandle};
 use bftd_core::block::ValidatorIndex;
 use bftd_core::committee::{Stake, ValidatorInfo};
-use bftd_core::config::BftdConfig;
 use bftd_core::crypto::{blake2_hash, generate_validator_key_pair, Ed25519Signer};
 use bftd_core::genesis::Genesis;
 use bftd_core::network::{generate_network_keypair, NoisePrivateKey};

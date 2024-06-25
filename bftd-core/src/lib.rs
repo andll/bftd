@@ -15,7 +15,6 @@
 pub mod block;
 pub mod block_manager;
 pub mod committee;
-pub mod config;
 pub mod consensus;
 pub mod core;
 pub mod crypto;
