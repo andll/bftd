@@ -1,5 +1,5 @@
 use crate::block::{AuthorRound, Block, BlockReference, Round, ValidatorIndex};
-use crate::committee::{BlockMatch, Committee};
+use crate::committee::{BlockMatch, BlockVerifiedByCommittee, Committee};
 use crate::consensus::{Commit, CommitDecision, UniversalCommitter, UniversalCommitterBuilder};
 use crate::core::{Core, ProposalMaker};
 use crate::crypto::Signer;
@@ -30,6 +30,7 @@ pub struct Syncer {
     handle: JoinHandle<()>,
     stop: oneshot::Sender<()>,
     last_commit_receiver: watch::Receiver<Option<u64>>,
+    verification_task: JoinHandle<()>,
 }
 
 struct SyncerTask<S, B, C, P> {
@@ -66,7 +67,7 @@ pub trait Clock: Send + 'static {
 }
 
 pub trait BlockFilter: Send + Sync + 'static {
-    fn check_block(&self, block: &Arc<Block>) -> anyhow::Result<()>;
+    fn check_block(&self, block: &Block) -> anyhow::Result<()>;
 }
 
 #[derive(Clone)]
@@ -106,7 +107,7 @@ impl Syncer {
             block_store: block_store.clone(),
             last_proposed_round_receiver,
             validator_index,
-            blocks_sender: blocks_sender.clone(),
+            blocks_sender,
             committee: committee.clone(),
             block_filter,
             metrics: metrics.clone(),
@@ -136,13 +137,18 @@ impl Syncer {
         let (last_commit_sender, last_commit_receiver) =
             watch::channel(last_commit.as_ref().map(Commit::index));
 
+        let (unverified_block_sender, unverified_block_receiver) = mpsc::channel(32);
+
         let fetcher = BlockFetcher::new(
-            blocks_sender,
+            unverified_block_sender,
             rpc.clone(),
             committee.clone(),
             metrics.clone(),
             validator_index,
         );
+
+        let verification_task =
+            tokio::spawn(inner.run_verification_task(unverified_block_receiver));
 
         let syncer = SyncerTask {
             core,
@@ -166,11 +172,14 @@ impl Syncer {
             handle,
             stop: stop_sender,
             last_commit_receiver,
+            verification_task,
         }
     }
 
     pub async fn stop(self) {
+        self.verification_task.abort();
         drop(self.stop);
+        self.verification_task.await.ok();
         self.handle.await.ok();
     }
 
@@ -490,15 +499,45 @@ impl<B, F: BlockFilter> SyncerInner<B, F> {
         let block = self
             .committee
             .verify_block(data, matcher, self.metrics.clone())?;
+        self.complete_block_verification(block)
+    }
+
+    fn complete_block_verification(
+        &self,
+        block: BlockVerifiedByCommittee,
+    ) -> anyhow::Result<Arc<Block>> {
         let block = block.extract_for_further_verification();
-        let block = Arc::new(block);
         if let Err(err) = self.block_filter.check_block(&block) {
             bail!(
                 "Block filter verification failed for block {}: {err}",
                 block.reference()
             );
         }
+        let block = Arc::new(block);
         Ok(block)
+    }
+
+    async fn run_verification_task(
+        self: Arc<Self>,
+        mut receiver: mpsc::Receiver<BlockVerifiedByCommittee>,
+    ) {
+        while let Some(block) = receiver.recv().await {
+            let reference = *block.reference();
+            let block = self.complete_block_verification(block);
+            let block = match block {
+                Err(err) => {
+                    tracing::warn!(
+                        "[byzantine] Block {reference} has failed secondary verification: {err}"
+                    );
+                    // todo - need to clean BlockManager
+                    continue;
+                }
+                Ok(block) => block,
+            };
+            if self.blocks_sender.send(block).await.is_err() {
+                return;
+            }
+        }
     }
 }
 
@@ -572,7 +611,7 @@ impl Clock for SystemTimeClock {
 }
 
 impl BlockFilter for () {
-    fn check_block(&self, _block: &Arc<Block>) -> anyhow::Result<()> {
+    fn check_block(&self, _block: &Block) -> anyhow::Result<()> {
         Ok(())
     }
 }

@@ -1,4 +1,4 @@
-use crate::block::{Block, BlockReference, ValidatorIndex};
+use crate::block::{BlockReference, ValidatorIndex};
 use crate::block_manager::AddBlockResult;
 use crate::committee::{BlockMatch, BlockVerifiedByCommittee, Committee};
 use crate::metrics::Metrics;
@@ -23,7 +23,7 @@ pub struct BlockFetcher {
 }
 
 struct BlockFetcherInner {
-    blocks_sender: mpsc::Sender<Arc<Block>>,
+    blocks_sender: mpsc::Sender<BlockVerifiedByCommittee>,
     rpc: Arc<NetworkRpc>,
     committee: Arc<Committee>,
     metrics: Arc<Metrics>,
@@ -44,7 +44,7 @@ struct FetchTask {
 
 impl BlockFetcher {
     pub fn new(
-        blocks_sender: mpsc::Sender<Arc<Block>>,
+        blocks_sender: mpsc::Sender<BlockVerifiedByCommittee>,
         rpc: Arc<NetworkRpc>,
         committee: Arc<Committee>,
         metrics: Arc<Metrics>,
@@ -140,6 +140,7 @@ impl FetchTask {
         loop {
             let priority_peer = self.find_priority();
             let was_source;
+            // todo - need to have some limit on number of outbound RPCs to peer
             let peer = if let Some(peer) = priority_peer {
                 was_source = true;
                 Some(peer)
@@ -158,11 +159,14 @@ impl FetchTask {
             } else {
                 // No more peers(either created fetch task for each peer, or no connection to some peers)
             }
+            // futures and self.not_sent can't be empty at the same time
+            // This can change if we allow to remove peer from the list
             select! {
                 resp = &mut futures.next(), if !futures.is_empty() => {
                     match resp.unwrap() {
                         Ok(block) => {
-
+                            self.inner.blocks_sender.send(block).await.ok();
+                            return;
                         }
                         Err(peer) => {
                             self.not_sent.push(peer);

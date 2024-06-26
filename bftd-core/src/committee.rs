@@ -192,6 +192,10 @@ impl BlockVerifiedByCommittee {
     pub fn extract_for_further_verification(self) -> Block {
         self.0
     }
+
+    pub fn reference(&self) -> &BlockReference {
+        self.0.reference()
+    }
 }
 
 impl Stake {
