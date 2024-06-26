@@ -134,6 +134,14 @@ impl ValidatorSet {
     #[allow(dead_code)]
     pub const MAX_SIZE: usize = ELEMENT_BITS * VALIDATOR_SET_ELEMENT_COUNT;
 
+    pub fn from_iter(i: impl IntoIterator<Item = ValidatorIndex>) -> Self {
+        let mut s = Self::default();
+        for v in i {
+            s.insert(v);
+        }
+        s
+    }
+
     #[inline]
     pub fn insert(&mut self, index: ValidatorIndex) -> bool {
         let index = index.0 as usize;
@@ -166,7 +174,6 @@ impl ValidatorSet {
     }
 
     #[inline]
-    #[allow(dead_code)]
     pub fn contains(&self, index: ValidatorIndex) -> bool {
         let index = index.0 as usize;
         let byte_index = index / ELEMENT_BITS;
@@ -176,6 +183,7 @@ impl ValidatorSet {
         (self.0[byte_index] & bit) != 0
     }
 
+    // todo fix ValidatorSet::present returning more indexes then validators in committee
     pub fn present(&self) -> impl Iterator<Item = ValidatorIndex> + '_ {
         self.0.iter().enumerate().flat_map(|(byte_index, byte)| {
             (0..ELEMENT_BITS)

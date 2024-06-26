@@ -18,6 +18,7 @@ pub mod committee;
 pub mod consensus;
 pub mod core;
 pub mod crypto;
+mod fetcher;
 pub mod genesis;
 mod log;
 pub mod metrics;

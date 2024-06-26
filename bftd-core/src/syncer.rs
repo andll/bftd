@@ -1,8 +1,9 @@
 use crate::block::{AuthorRound, Block, BlockReference, Round, ValidatorIndex};
-use crate::committee::Committee;
+use crate::committee::{BlockMatch, Committee};
 use crate::consensus::{Commit, CommitDecision, UniversalCommitter, UniversalCommitterBuilder};
 use crate::core::{Core, ProposalMaker};
 use crate::crypto::Signer;
+use crate::fetcher::BlockFetcher;
 use crate::metrics::{Metrics, UtilizationTimerExt};
 use crate::network::ConnectionPool;
 use crate::rpc::{
@@ -35,7 +36,9 @@ struct SyncerTask<S, B, C, P> {
     core: Core<S, B>,
     committer: UniversalCommitter<B>,
     block_store: B,
-    rpc: NetworkRpc,
+    rpc: Arc<NetworkRpc>,
+    // note fetcher contains ref to sender part of SyncerTask::blocks_receiver
+    fetcher: BlockFetcher,
     last_proposed_round_sender: watch::Sender<Round>,
     blocks_receiver: mpsc::Receiver<Arc<Block>>,
     proposer: P,
@@ -103,7 +106,7 @@ impl Syncer {
             block_store: block_store.clone(),
             last_proposed_round_receiver,
             validator_index,
-            blocks_sender,
+            blocks_sender: blocks_sender.clone(),
             committee: committee.clone(),
             block_filter,
             metrics: metrics.clone(),
@@ -121,6 +124,7 @@ impl Syncer {
             })
             .collect();
         let rpc = NetworkRpc::start(pool, peer_routers, metrics.clone());
+        let rpc = Arc::new(rpc);
         let (stop_sender, stop_receiver) = oneshot::channel();
 
         let last_commit = block_store.last_commit();
@@ -132,11 +136,20 @@ impl Syncer {
         let (last_commit_sender, last_commit_receiver) =
             watch::channel(last_commit.as_ref().map(Commit::index));
 
+        let fetcher = BlockFetcher::new(
+            blocks_sender,
+            rpc.clone(),
+            committee.clone(),
+            metrics.clone(),
+            validator_index,
+        );
+
         let syncer = SyncerTask {
             core,
             committer,
             block_store,
             rpc,
+            fetcher,
             last_proposed_round_sender,
             blocks_receiver,
             proposer,
@@ -192,6 +205,7 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                     let age_ms = ns_to_ms(self.clock.time_ns().saturating_sub(block.time_ns()));
                     self.metrics.syncer_received_block_age_ms.with_label_values(&[self.metrics.validator_label(block.author())]).observe(age_ms as f64);
                     let add_block_result = self.core.add_block(block);
+                    self.fetcher.handle_add_block_result(&reference, &add_block_result);
                     let added_this = add_block_result.added.iter().any(|b|*b.reference() == reference);
                     tracing::debug!("Received {reference} {} age {age_ms} ms", if added_this {
                         let added_blocks: Vec<_> = add_block_result.added.iter().map(|b|b.reference()).collect();
@@ -274,7 +288,11 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
             }
         }
         tracing::debug!("Syncer stopped, waiting for rpc to stop");
-        self.rpc.stop().await;
+        self.fetcher.stop().await;
+        let Ok(rpc) = Arc::try_unwrap(self.rpc) else {
+            panic!("Can't unwrap rpc, fetcher did not stop properly")
+        };
+        rpc.stop().await;
     }
 
     fn put_commit(&mut self, decision: &CommitDecision) {
@@ -448,7 +466,7 @@ impl<B: BlockStore, C: Clock + Clone, F: BlockFilter> PeerRouter<B, C, F> {
             let response = response?;
             let response = bincode::deserialize::<StreamRpcResponse>(&response.0)?;
             let StreamRpcResponse::Block(block) = response;
-            let block = inner.parse_verify_block(block, Some(peer))?;
+            let block = inner.parse_verify_block(block, BlockMatch::Author(peer))?;
             if inner.blocks_sender.send(block).await.is_err() {
                 break;
             }
@@ -468,14 +486,11 @@ impl<B: BlockStore, C: Clock + Clone, F: BlockFilter> PeerRouter<B, C, F> {
 }
 
 impl<B, F: BlockFilter> SyncerInner<B, F> {
-    fn parse_verify_block(
-        &self,
-        data: Bytes,
-        expected_author: Option<ValidatorIndex>,
-    ) -> anyhow::Result<Arc<Block>> {
+    fn parse_verify_block(&self, data: Bytes, matcher: BlockMatch) -> anyhow::Result<Arc<Block>> {
         let block = self
             .committee
-            .verify_block(data, expected_author, self.metrics.clone())?;
+            .verify_block(data, matcher, self.metrics.clone())?;
+        let block = block.extract_for_further_verification();
         let block = Arc::new(block);
         if let Err(err) = self.block_filter.check_block(&block) {
             bail!(
@@ -515,22 +530,22 @@ impl<B: BlockStore, C: Clock + Clone, F: BlockFilter> NetworkRpcRouter for PeerR
 }
 
 #[derive(Serialize, Deserialize)]
-enum StreamRpcRequest {
+pub(crate) enum StreamRpcRequest {
     Subscribe(Round),
 }
 
 #[derive(Serialize, Deserialize)]
-enum RpcRequest {
+pub(crate) enum RpcRequest {
     GetBlock(BlockReference),
 }
 
 #[derive(Serialize, Deserialize)]
-enum RpcResponse {
+pub(crate) enum RpcResponse {
     GetBlockResponse(Option<Bytes>),
 }
 
 #[derive(Serialize, Deserialize)]
-enum StreamRpcResponse {
+pub(crate) enum StreamRpcResponse {
     Block(Bytes),
 }
 

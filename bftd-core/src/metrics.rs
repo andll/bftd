@@ -6,10 +6,17 @@ use std::time::Instant;
 
 pub struct Metrics {
     pub block_manager_missing_inverse_len: IntGauge,
+
     pub blocks_loaded: IntGauge,
     pub blocks_loaded_bytes: IntGauge,
+
     pub core_last_proposed_round: IntGauge,
     pub core_last_proposed_block_size: IntGauge,
+
+    pub fetcher_missing_block_tasks: IntGauge,
+    pub fetcher_inflight_requests: IntGauge,
+    pub fetcher_requests_total: IntCounter,
+
     pub syncer_last_committed_round: IntGauge,
     pub syncer_last_commit_index: IntGauge,
     pub syncer_leader_timeouts: IntCounter,
@@ -17,7 +24,9 @@ pub struct Metrics {
     pub syncer_own_block_commit_age_ms: Histogram,
     pub syncer_main_loop_util_ns: IntCounter,
     pub syncer_main_loop_calls: IntCounter,
+
     pub rpc_connected_peers: IntGauge,
+
     validator_labels: Vec<String>,
 }
 
@@ -59,14 +68,21 @@ impl Metrics {
 
     fn new_inner(registry: &Registry, validator_labels: Vec<String>) -> Arc<Self> {
         Arc::new(Self {
-            blocks_loaded: gauge!("blocks_loaded", registry),
-            blocks_loaded_bytes: gauge!("blocks_loaded_bytes", registry),
             block_manager_missing_inverse_len: gauge!(
                 "block_manager_missing_inverse_len",
                 registry
             ),
+
+            blocks_loaded: gauge!("blocks_loaded", registry),
+            blocks_loaded_bytes: gauge!("blocks_loaded_bytes", registry),
+
             core_last_proposed_round: gauge!("core_last_proposed_round", registry),
             core_last_proposed_block_size: gauge!("core_last_proposed_block_size", registry),
+
+            fetcher_missing_block_tasks: gauge!("fetcher_missing_block_tasks", registry),
+            fetcher_inflight_requests: gauge!("fetcher_inflight_requests", registry),
+            fetcher_requests_total: counter!("fetcher_requests_total", registry),
+
             syncer_last_committed_round: gauge!("syncer_last_committed_round", registry),
             syncer_last_commit_index: gauge!("syncer_last_commit_index", registry),
             syncer_leader_timeouts: counter!("syncer_leader_timeouts", registry),
@@ -83,6 +99,7 @@ impl Metrics {
             ),
             syncer_main_loop_util_ns: counter!("syncer_main_loop_util_ns", registry),
             syncer_main_loop_calls: counter!("syncer_main_loop_calls", registry),
+
             rpc_connected_peers: gauge!("rpc_connected_peers", registry),
             validator_labels,
         })

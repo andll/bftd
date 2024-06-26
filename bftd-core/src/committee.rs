@@ -1,9 +1,11 @@
-use crate::block::{Block, ChainId, Round, ValidatorIndex, MAX_PARENTS};
+use crate::block::{Block, BlockReference, ChainId, Round, ValidatorIndex, MAX_PARENTS};
 use crate::crypto::{Blake2Hasher, Ed25519Verifier};
 use crate::metrics::Metrics;
 use crate::network::{NoisePublicKey, PeerInfo};
 use anyhow::{bail, ensure};
 use bytes::Bytes;
+use rand::prelude::SliceRandom;
+use rand::rngs::ThreadRng;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -55,15 +57,24 @@ impl Committee {
     pub fn verify_block(
         &self,
         data: Bytes,
-        expected_author: Option<ValidatorIndex>,
+        matcher: BlockMatch,
         metrics: Arc<Metrics>,
-    ) -> anyhow::Result<Block> {
-        let author = Block::author_from_bytes(&data)?;
-        if let Some(expected_author) = expected_author {
-            ensure!(
-                expected_author == author,
-                "Received block authored by {author} validator, expected {expected_author}"
-            );
+    ) -> anyhow::Result<BlockVerifiedByCommittee> {
+        let reference = Block::reference_from_block_bytes(&data)?;
+        let author = reference.author;
+        match matcher {
+            BlockMatch::Author(expected_author) => {
+                ensure!(
+                    expected_author == author,
+                    "Received block authored by {author} validator, expected {expected_author}"
+                );
+            }
+            BlockMatch::Reference(expected_reference) => {
+                ensure!(
+                    expected_reference == reference,
+                    "Received block reference {reference} validator, expected {expected_reference}"
+                );
+            }
         }
         ensure!(author.0 < MAX_COMMITTEE, "Validator not found");
         let Some(author) = self.validators.get(author.0 as usize) else {
@@ -76,7 +87,7 @@ impl Committee {
             &self.chain_id == block.chain_id(),
             "Received block from a different chain"
         );
-        Ok(block)
+        Ok(BlockVerifiedByCommittee(block))
     }
 
     pub fn get_stake(&self, index: ValidatorIndex) -> Stake {
@@ -112,6 +123,12 @@ impl Committee {
             .iter()
             .enumerate()
             .map(|(i, _)| ValidatorIndex(i as u64))
+    }
+
+    pub fn all_indexes_shuffled_excluding(&self, exclude: ValidatorIndex) -> Vec<ValidatorIndex> {
+        let mut all_indexes: Vec<_> = self.enumerate_indexes().filter(|v| v != &exclude).collect();
+        all_indexes.shuffle(&mut ThreadRng::default());
+        all_indexes
     }
 
     pub fn genesis_blocks(&self) -> Vec<Block> {
@@ -159,6 +176,22 @@ pub fn resolve_one(s: &str) -> SocketAddr {
         );
     }
     addrs.into_iter().next().unwrap()
+}
+
+pub enum BlockMatch {
+    Author(ValidatorIndex),
+    Reference(BlockReference),
+}
+
+/// Block that passed some verifications:
+/// - Static checks (block header parsed, hash matches)
+/// - Committee checks(signature is correct, chain_id matches)
+pub struct BlockVerifiedByCommittee(Block);
+
+impl BlockVerifiedByCommittee {
+    pub fn extract_for_further_verification(self) -> Block {
+        self.0
+    }
 }
 
 impl Stake {

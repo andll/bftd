@@ -79,6 +79,8 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
     }
 
     pub fn missing_validators_for_proposal(&self) -> Vec<ValidatorIndex> {
+        // todo - rewrite. Use ValidatorSet instead of BTreeSet
+        // todo fix ValidatorSet::present returning more indexes then validators in committee
         let mut s = BTreeSet::from_iter(self.committee.enumerate_indexes());
         for v in self.proposer_clock.validator_set().present() {
             s.remove(&v);

@@ -110,13 +110,28 @@ impl Block {
         self.time_ns
     }
 
-    pub fn author_from_bytes(data: &[u8]) -> anyhow::Result<ValidatorIndex> {
+    pub fn reference_from_block_bytes(data: &[u8]) -> anyhow::Result<BlockReference> {
         ensure!(data.len() >= Self::PARENTS_OFFSET, "Block too small");
-        Ok(ValidatorIndex(u64::from_be_bytes(
+        let hash = BlockHash(
+            data[Self::HASH_OFFSET..Self::HASH_OFFSET + BLOCK_HASH_LENGTH]
+                .try_into()
+                .unwrap(),
+        );
+        let round = Round(u64::from_be_bytes(
+            data[Self::ROUND_OFFSET..Self::ROUND_OFFSET + 8]
+                .try_into()
+                .unwrap(),
+        ));
+        let author = ValidatorIndex(u64::from_be_bytes(
             data[Self::AUTHOR_OFFSET..Self::AUTHOR_OFFSET + 8]
                 .try_into()
                 .unwrap(),
-        )))
+        ));
+        Ok(BlockReference {
+            round,
+            author,
+            hash,
+        })
     }
 
     pub fn chain_id(&self) -> &ChainId {

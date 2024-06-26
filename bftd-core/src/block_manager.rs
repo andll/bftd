@@ -13,6 +13,7 @@ pub struct BlockManager<S> {
 
 pub struct AddBlockResult {
     pub added: Vec<Arc<Block>>,
+    pub suspended: Vec<BlockReference>,
     pub new_missing: Vec<BlockReference>,
     pub previously_missing: Vec<BlockReference>,
 }
@@ -31,6 +32,7 @@ impl<S: BlockStore> BlockManager<S> {
         let mut new_missing = Vec::new();
         let mut previously_missing = Vec::new();
         let mut blocks = HashMap::new();
+        let mut suspended = Vec::new();
         blocks.insert(*block.reference(), block);
         while let Some(block) = blocks.keys().next().copied() {
             let block = blocks.remove(&block).unwrap();
@@ -56,6 +58,9 @@ impl<S: BlockStore> BlockManager<S> {
                 added.push(block.clone());
                 self.store.put(block);
             } else {
+                // todo tests
+                // todo only newly suspended blocks
+                suspended.push(*block.reference());
                 for parent in missing {
                     let entry = self.missing_inverse.entry(parent);
                     if matches!(entry, Entry::Vacant(_)) {
@@ -73,6 +78,7 @@ impl<S: BlockStore> BlockManager<S> {
         }
         AddBlockResult {
             added,
+            suspended,
             new_missing,
             previously_missing,
         }
