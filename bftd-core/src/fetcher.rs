@@ -10,6 +10,7 @@ use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use parking_lot::Mutex;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::select;
@@ -28,6 +29,7 @@ struct BlockFetcherInner {
     committee: Arc<Committee>,
     metrics: Arc<Metrics>,
     validator_index: ValidatorIndex,
+    inflight_peer_rpc: Vec<AtomicUsize>,
 }
 
 struct FetchTaskControl {
@@ -42,6 +44,9 @@ struct FetchTask {
     not_sent: Vec<ValidatorIndex>,
 }
 
+// todo - limit on the receiving side as well
+const MAX_RPC_PER_PEER: usize = 50;
+
 impl BlockFetcher {
     pub fn new(
         blocks_sender: mpsc::Sender<BlockVerifiedByCommittee>,
@@ -50,12 +55,17 @@ impl BlockFetcher {
         metrics: Arc<Metrics>,
         validator_index: ValidatorIndex,
     ) -> Self {
+        let inflight_peer_rpc = committee
+            .enumerate_indexes()
+            .map(|_| Default::default())
+            .collect();
         let inner = BlockFetcherInner {
             blocks_sender,
             rpc,
             committee,
             metrics,
             validator_index,
+            inflight_peer_rpc,
         };
         let inner = Arc::new(inner);
         Self {
@@ -149,6 +159,8 @@ impl FetchTask {
                 self.find_any()
             };
             if let Some(peer) = peer {
+                peer.slice_get(&self.inner.inflight_peer_rpc)
+                    .fetch_add(1, Ordering::Relaxed);
                 futures.push(Self::fetch_block_from_peer_task(
                     &inner,
                     request.clone(),
@@ -183,7 +195,11 @@ impl FetchTask {
     fn find_priority(&mut self) -> Option<ValidatorIndex> {
         let lock = self.source.lock();
         vec_take_if(&mut self.not_sent, |v| {
-            lock.contains(*v)
+            let inflight = v
+                .slice_get(&self.inner.inflight_peer_rpc)
+                .load(Ordering::Relaxed);
+            inflight < MAX_RPC_PER_PEER
+                && lock.contains(*v)
                 && self
                     .inner
                     .rpc
@@ -193,9 +209,14 @@ impl FetchTask {
 
     fn find_any(&mut self) -> Option<ValidatorIndex> {
         vec_take_if(&mut self.not_sent, |v| {
-            self.inner
-                .rpc
-                .is_connected(self.inner.committee.network_key(*v))
+            let inflight = v
+                .slice_get(&self.inner.inflight_peer_rpc)
+                .load(Ordering::Relaxed);
+            inflight < MAX_RPC_PER_PEER
+                && self
+                    .inner
+                    .rpc
+                    .is_connected(self.inner.committee.network_key(*v))
         })
     }
 
@@ -210,6 +231,8 @@ impl FetchTask {
             .rpc
             .rpc(inner.committee.network_key(peer), NetworkRequest(request))
             .await;
+        peer.slice_get(&inner.inflight_peer_rpc)
+            .fetch_sub(1, Ordering::Relaxed);
         let response = Self::parse_get_block_response(response);
         match response {
             Ok(Some(bytes)) => {
