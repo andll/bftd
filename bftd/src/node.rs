@@ -11,6 +11,8 @@ use bftd_core::metrics::Metrics;
 use bftd_core::network::{ConnectionPool, NoisePrivateKey};
 use bftd_core::store::rocks_store::RocksStore;
 use bftd_core::syncer::{Syncer, SystemTimeClock};
+use futures::future::join_all;
+use futures::FutureExt;
 use prometheus::Registry;
 use std::fs;
 use std::net::{IpAddr, SocketAddr};
@@ -147,5 +149,40 @@ impl Node {
             server_handle,
             load_gen_handle,
         })
+    }
+}
+
+impl NodeHandle {
+    pub fn stop_all(v: Vec<NodeHandle>) {
+        let mut rh = Vec::with_capacity(v.len());
+        for node in v {
+            let r = node.runtime.clone();
+            let h = r.spawn(node.stop());
+            rh.push((r, h));
+        }
+        for (r, h) in rh {
+            r.block_on(h).ok();
+            drop(r);
+        }
+    }
+
+    pub async fn stop(self) {
+        let mut futures = Vec::new();
+        if let Some(load_gen) = self.load_gen_handle {
+            load_gen.abort();
+            futures.push(load_gen.map(|_| ()).boxed());
+        }
+        if let Some(server) = self.server_handle {
+            futures.push(server.stop().boxed());
+        }
+        if let Some(prometheus) = self.prometheus_handle {
+            prometheus.abort();
+            futures.push(prometheus.map(|_| ()).boxed());
+        }
+        join_all(futures).await;
+        let Ok(syncer) = Arc::try_unwrap(self.syncer) else {
+            panic!("Can't unwrap syncer - bftd server did not stop properly?")
+        };
+        syncer.stop().await;
     }
 }

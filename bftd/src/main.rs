@@ -6,11 +6,13 @@ mod prometheus;
 pub mod server;
 mod test_cluster;
 
+use crate::node::NodeHandle;
 use crate::test_cluster::{start_node, TestCluster};
 use anyhow::bail;
 use clap::Parser;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::PathBuf;
+use std::time::Duration;
 use std::{fs, process, thread};
 use tracing_subscriber::EnvFilter;
 
@@ -40,6 +42,8 @@ struct NewChainArgs {
 #[derive(Parser, Debug)]
 struct LocalClusterArgs {
     name: String,
+    #[arg(long, short = 'd')]
+    duration: Option<u64>,
 }
 
 #[derive(Parser, Debug)]
@@ -114,8 +118,13 @@ fn handle_new_chain(args: NewChainArgs) -> anyhow::Result<()> {
 fn handle_local_cluster(args: LocalClusterArgs) -> anyhow::Result<()> {
     let clusters_path = PathBuf::from("clusters");
     let path = clusters_path.join(&args.name);
-    let _handles = TestCluster::start_test_cluster(path)?;
-    thread::park();
+    let handles = TestCluster::start_test_cluster(path)?;
+    if let Some(duration) = args.duration {
+        thread::sleep(Duration::from_secs(duration));
+    } else {
+        thread::park();
+    }
+    NodeHandle::stop_all(handles);
     Ok(())
 }
 

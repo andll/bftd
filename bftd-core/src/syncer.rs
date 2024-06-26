@@ -302,12 +302,13 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                 }
             }
         }
-        tracing::debug!("Syncer stopped, waiting for rpc to stop");
+        tracing::info!("Syncer stopped, waiting for rpc to stop");
         self.fetcher.stop().await;
         let Ok(rpc) = Arc::try_unwrap(self.rpc) else {
             panic!("Can't unwrap rpc, fetcher did not stop properly")
         };
         rpc.stop().await;
+        tracing::info!("Rpc stopped");
     }
 
     fn put_commit(&mut self, decision: &CommitDecision) {
