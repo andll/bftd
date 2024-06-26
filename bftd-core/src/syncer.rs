@@ -1,4 +1,5 @@
 use crate::block::{AuthorRound, Block, BlockReference, Round, ValidatorIndex};
+use crate::block_manager::BlockManager;
 use crate::committee::{BlockMatch, BlockVerifiedByCommittee, Committee};
 use crate::consensus::{Commit, CommitDecision, UniversalCommitter, UniversalCommitterBuilder};
 use crate::core::{Core, ProposalMaker};
@@ -50,6 +51,7 @@ struct SyncerTask<S, B, C, P> {
     metrics: Arc<Metrics>,
     last_commit_sender: watch::Sender<Option<u64>>,
     last_known_round: Round,
+    block_manager: BlockManager<B>,
 }
 
 struct SyncerInner<B, F> {
@@ -150,6 +152,8 @@ impl Syncer {
         let verification_task =
             tokio::spawn(inner.run_verification_task(unverified_block_receiver));
 
+        let block_manager = BlockManager::new(block_store.clone(), metrics.clone());
+
         let syncer = SyncerTask {
             core,
             committer,
@@ -166,6 +170,7 @@ impl Syncer {
             metrics,
             last_commit_sender,
             last_known_round,
+            block_manager,
         };
         let handle = tokio::spawn(syncer.run());
         Syncer {
@@ -213,7 +218,8 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                     // todo need more block verification
                     let age_ms = ns_to_ms(self.clock.time_ns().saturating_sub(block.time_ns()));
                     self.metrics.syncer_received_block_age_ms.with_label_values(&[self.metrics.validator_label(block.author())]).observe(age_ms as f64);
-                    let add_block_result = self.core.add_block(block);
+                    let add_block_result = self.block_manager.add_block(block);
+                    self.core.add_blocks(&add_block_result.added);
                     self.fetcher.handle_add_block_result(&reference, &add_block_result);
                     let added_this = add_block_result.added.iter().any(|b|*b.reference() == reference);
                     tracing::debug!("Received {reference} {} age {age_ms} ms", if added_this {

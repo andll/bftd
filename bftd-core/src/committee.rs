@@ -161,6 +161,10 @@ impl Committee {
     pub fn len(&self) -> usize {
         self.validators.len()
     }
+
+    pub fn chain_id(&self) -> &ChainId {
+        &self.chain_id
+    }
 }
 
 pub fn resolve_one(s: &str) -> SocketAddr {

@@ -1,5 +1,4 @@
-use crate::block::{Block, BlockReference, ChainId, Round, ValidatorIndex};
-use crate::block_manager::{AddBlockResult, BlockManager};
+use crate::block::{Block, BlockReference, Round, ValidatorIndex};
 use crate::committee::Committee;
 use crate::crypto::{Blake2Hasher, Signer};
 use crate::metrics::Metrics;
@@ -11,7 +10,7 @@ use std::sync::Arc;
 
 pub struct Core<S, B> {
     signer: S,
-    block_manager: BlockManager<B>,
+    block_store: B,
     proposer_clock: ThresholdClockAggregator,
     committee: Arc<Committee>,
     last_proposed_round: Round,
@@ -42,13 +41,12 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
             latest_blocks.push(last_block);
         }
         let last_proposed_round = block_store.last_known_round(index);
-        let block_manager = BlockManager::new(block_store, metrics.clone());
         let proposer_clock = ThresholdClockAggregator::new(last_proposed_round);
         // todo recover other nodes for parents accumulator?
         let parents_accumulator = ParentsAccumulator::new();
         let mut this = Self {
             signer,
-            block_manager,
+            block_store,
             proposer_clock,
             committee,
             last_proposed_round,
@@ -56,15 +54,18 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
             parents_accumulator,
             metrics,
         };
-        this.blocks_inserted(&latest_blocks);
+        this.add_blocks(&latest_blocks);
         this
     }
 
-    /// returns new missing blocks
-    pub fn add_block(&mut self, block: Arc<Block>) -> AddBlockResult {
-        let result = self.block_manager.add_block(block);
-        self.blocks_inserted(&result.added);
-        result
+    /// Handles added blocks.
+    /// Blocks added here must be already stored in BlockStore.
+    pub fn add_blocks(&mut self, blocks: &[Arc<Block>]) {
+        for b in blocks {
+            self.proposer_clock
+                .add_block(*b.reference(), &self.committee);
+        }
+        self.parents_accumulator.add_blocks(blocks);
     }
 
     /// returns vector clock round for new proposal
@@ -105,7 +106,7 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
         let block = Block::new(
             round,
             self.index,
-            ChainId::CHAIN_ID_TEST,
+            *self.committee.chain_id(),
             time_ns,
             &payload,
             parents,
@@ -114,24 +115,15 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
             Some(self.metrics.clone()),
         );
         let block = Arc::new(block);
-        let result = self.block_manager.add_block(block.clone());
-        self.block_manager.flush();
-        result.assert_added(block.reference());
-        self.blocks_inserted(&result.added);
+        self.block_store.put(block.clone());
+        self.block_store.flush();
+        self.add_blocks(&[block.clone()]);
         self.last_proposed_round = round;
         self.metrics.core_last_proposed_round.set(round.0 as i64);
         self.metrics
             .core_last_proposed_block_size
             .set(block.data().len() as i64);
         block
-    }
-
-    fn blocks_inserted(&mut self, blocks: &[Arc<Block>]) {
-        for b in blocks {
-            self.proposer_clock
-                .add_block(*b.reference(), &self.committee);
-        }
-        self.parents_accumulator.add_blocks(blocks);
     }
 
     pub fn committee(&self) -> &Arc<Committee> {
