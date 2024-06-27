@@ -1,4 +1,4 @@
-use crate::block::MAX_BLOCK_SIZE;
+use crate::block::{MAX_BLOCK_SIZE, ValidatorIndex};
 use crate::metrics::Metrics;
 use crate::network::{Connection, NetworkMessage};
 use crate::network::{ConnectionPool, NoisePublicKey};
@@ -350,6 +350,7 @@ impl PeerTask {
                                 ack_receiver,
                                 tag,
                                 network_sender: self.connection.sender.clone(),
+                                peer: self.connection.peer.index,
                             };
                             // todo track task
                             let stream_task = tokio::spawn(stream_task.run());
@@ -437,6 +438,7 @@ struct StreamRpcResponseTask {
     ack_receiver: mpsc::Receiver<u64>,
     network_sender: mpsc::Sender<NetworkMessage>,
     tag: u64,
+    peer: ValidatorIndex,
 }
 
 impl StreamRpcResponseTask {
@@ -444,8 +446,13 @@ impl StreamRpcResponseTask {
         let mut sent = 0u64;
         let mut acked = 0u64;
         loop {
+            let not_acked = sent.saturating_sub(acked);
+            let recv_enabled = not_acked < STREAM_BUFFER_SIZE;
+            if !recv_enabled {
+                tracing::debug!("Streaming task to {} is blocked, waiting for ack. Sent {sent}, acked {acked}, not acked {not_acked}", self.peer);
+            }
             select! {
-                item = self.stream.recv(), if sent.saturating_sub(acked) < STREAM_BUFFER_SIZE  =>{
+                item = self.stream.recv(), if recv_enabled  =>{
                     if let Some(item) = item {
                         sent += item.0.len() as u64; // todo check overflow
                         PeerTask::send_message(
