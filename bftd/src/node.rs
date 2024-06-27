@@ -189,6 +189,7 @@ impl NodeHandle {
         syncer.stop().await;
     }
 
+    #[allow(dead_code)]
     pub fn stop(self) {
         // This clone is needed so that runtime is dropped here, rather than in the context of stop_inner
         let runtime = self.runtime.clone();

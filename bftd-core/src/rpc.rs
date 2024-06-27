@@ -253,7 +253,10 @@ impl RpcTask {
             let peer_task = PeerTask {
                 connection,
                 peer_task_data,
-                stop: stop_rcv,
+                stop: Some(stop_rcv),
+                rpc_requests: Default::default(),
+                inbound_stream_requests: Default::default(),
+                tag: Default::default(),
             };
             let peer_task = tokio::spawn(peer_task.run());
             peer_tasks.insert(peer_public_key, (stop_send, peer_task));
@@ -272,12 +275,16 @@ impl RpcTask {
 struct PeerTask {
     connection: Connection,
     peer_task_data: PeerTaskData,
-    stop: oneshot::Receiver<()>,
+    stop: Option<oneshot::Receiver<()>>,
+
+    rpc_requests: HashMap<u64, oneshot::Sender<RpcResult<NetworkResponse>>>,
+    inbound_stream_requests: HashMap<u64, (u64, mpsc::Sender<RpcResult<NetworkResponse>>)>,
+    tag: u64,
 }
 
 impl PeerTask {
     async fn run(mut self) -> Option<PeerTaskData> {
-        let proceed = match self.run_inner().await {
+        let proceed = match self.run_until_stopped().await {
             Err(err) => {
                 tracing::warn!(
                     "Rpc connection to peer {} terminated with error: {:?}",
@@ -297,39 +304,27 @@ impl PeerTask {
         }
     }
 
-    async fn run_inner(&mut self) -> RpcResult<bool> {
-        let mut tag = 0u64;
-        let mut rpc_requests: HashMap<u64, oneshot::Sender<RpcResult<NetworkResponse>>> =
-            HashMap::new();
-        let mut inbound_stream_requests: HashMap<
-            u64,
-            (u64, mpsc::Sender<RpcResult<NetworkResponse>>),
-        > = HashMap::new();
+    async fn run_until_stopped(&mut self) -> RpcResult<bool> {
         // todo - wait / clean tasks
         let initial_command = self.peer_task_data.router.connected();
         if let Some(command) = initial_command {
-            // todo duplicated code (w/ stream command processing)
-            match command {
-                PeerRpcTaskCommand::Rpc(request, ch) => {
-                    tag += 1;
-                    rpc_requests.insert(tag, ch);
-                    Self::send_message(
-                        &mut self.connection.sender,
-                        &RpcMessage::RpcRequest(tag, request),
-                    )
-                    .await?;
-                }
-                PeerRpcTaskCommand::StreamRpc(request, ch) => {
-                    tag += 1;
-                    inbound_stream_requests.insert(tag, (0, ch));
-                    Self::send_message(
-                        &mut self.connection.sender,
-                        &RpcMessage::RpcStreamRequest(tag, request),
-                    )
-                    .await?;
-                }
-            }
+            self.process_command(command).await?;
         }
+        let mut stop = self.stop.take().unwrap();
+        let r = select! {
+            r = self.run_inner() => {
+                r
+            }
+            _ = &mut stop => {
+                // stop signaled. connection is being replaced - return true to switch to next connection
+                Ok(true)
+            }
+        };
+        self.stop = Some(stop);
+        r
+    }
+
+    async fn run_inner(&mut self) -> RpcResult<bool> {
         let mut outbound_streams = HashMap::new();
         loop {
             select! {
@@ -359,18 +354,18 @@ impl PeerTask {
                             outbound_streams.insert(tag, (ack_sender, stream_task));
                         }
                         RpcMessage::RpcResponse(tag, resp) => {
-                                let ch = rpc_requests.remove(&tag);
+                                let ch = self.rpc_requests.remove(&tag);
                                 let Some(ch) = ch else {return Err(RpcError::UnmatchedResponse)};
                                 ch.send(Ok(resp)).ok();
                             }
                         RpcMessage::RpcStreamItem(tag, item) => {
-                                let ch = inbound_stream_requests.get_mut(&tag);
+                                let ch = self.inbound_stream_requests.get_mut(&tag);
                                 let Some((bytes, ch)) = ch else {return Err(RpcError::UnmatchedResponse)};
                                 *bytes = if let Some(bytes) = bytes.checked_add(item.0.len() as u64) {
                                     bytes
                                 } else {
                                     tracing::warn!("Terminating connection to {} after receiving absurd amount of bytes in a stream", self.connection.peer.public_key);
-                                    // terminating current network connection, but allowing to start next peer task with new connection
+                                    // terminating the current network connection, but allowing to start next peer task with new connection
                                     return Ok(true);
                                 };
                                 Self::send_message(&mut self.connection.sender, &RpcMessage::RpcStreamBufferAck(tag, *bytes)).await?;
@@ -384,33 +379,41 @@ impl PeerTask {
                             ack_sender.send(bytes).await.ok(); // Continue to receive stream(receiver disconnected)?
                         }
                         RpcMessage::RpcStreamEOF(tag) => {
-                                inbound_stream_requests.remove(&tag);
+                                self.inbound_stream_requests.remove(&tag);
                             }
                     }
                 }
                 command = self.peer_task_data.receiver.recv() => {
                     // command received dropped, return false to stop peer processing
                     let Some(command): Option<PeerRpcTaskCommand> = command else {return Ok(false)};
-                    // todo duplicated code (w/ initial command processing)
-                    match command {
-                        PeerRpcTaskCommand::Rpc(request, ch) => {
-                            tag += 1;
-                            rpc_requests.insert(tag, ch);
-                            Self::send_message(&mut self.connection.sender, &RpcMessage::RpcRequest(tag, request)).await?;
-                        }
-                        PeerRpcTaskCommand::StreamRpc(request, ch) => {
-                            tag += 1;
-                            inbound_stream_requests.insert(tag, (0, ch));
-                            Self::send_message(&mut self.connection.sender, &RpcMessage::RpcStreamRequest(tag, request)).await?;
-                        }
-                    }
-                }
-                _ = &mut self.stop => {
-                    // stop signaled. connection is being replaced - return true to switch to next connection
-                    return Ok(true);
+                    self.process_command(command).await?;
                 }
             }
         }
+    }
+
+    async fn process_command(&mut self, command: PeerRpcTaskCommand) -> RpcResult<()> {
+        match command {
+            PeerRpcTaskCommand::Rpc(request, ch) => {
+                self.tag += 1;
+                self.rpc_requests.insert(self.tag, ch);
+                Self::send_message(
+                    &mut self.connection.sender,
+                    &RpcMessage::RpcRequest(self.tag, request),
+                )
+                .await?;
+            }
+            PeerRpcTaskCommand::StreamRpc(request, ch) => {
+                self.tag += 1;
+                self.inbound_stream_requests.insert(self.tag, (0, ch));
+                Self::send_message(
+                    &mut self.connection.sender,
+                    &RpcMessage::RpcStreamRequest(self.tag, request),
+                )
+                .await?;
+            }
+        }
+        Ok(())
     }
 
     async fn send_message(
