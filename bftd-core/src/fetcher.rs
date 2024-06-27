@@ -1,6 +1,7 @@
 use crate::block::{BlockReference, ValidatorIndex};
 use crate::block_manager::AddBlockResult;
 use crate::committee::{BlockMatch, BlockVerifiedByCommittee, Committee};
+use crate::log_byzantine;
 use crate::metrics::Metrics;
 use crate::rpc::{NetworkRequest, NetworkResponse, NetworkRpc, RpcResult};
 use crate::syncer::{RpcRequest, RpcResponse};
@@ -245,7 +246,7 @@ impl FetchTask {
                 ) {
                     Ok(block) => Ok(block),
                     Err(err) => {
-                        tracing::warn!("[byzantine] Peer {peer} send incorrect block: {err}");
+                        log_byzantine!("[byzantine] Peer {peer} send incorrect block: {err}");
                         Err(peer)
                     }
                 }
@@ -253,7 +254,7 @@ impl FetchTask {
             Ok(None) => {
                 if source {
                     // todo can we remove suspended source block from BlockManager?
-                    tracing::warn!("[byzantine] Peer {peer} sent block referencing {reference} but does respond to get_block request");
+                    log_byzantine!("[byzantine] Peer {peer} sent block referencing {reference} but does respond to get_block request");
                 }
                 Err(peer)
             }

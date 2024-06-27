@@ -8,3 +8,13 @@ pub fn enable_test_logging() {
         .try_init()
         .ok();
 }
+
+#[macro_export]
+macro_rules! log_byzantine (
+    ($($arg:tt)*) => {
+        #[cfg(debug_assertions)]
+        if true {panic!($($arg)*)} // check that smoke tests do not trigger any byzantine behaviour
+        #[cfg(not(debug_assertions))]
+        tracing::warn!($($arg)*);
+    };
+);
