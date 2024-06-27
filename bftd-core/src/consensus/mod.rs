@@ -7,6 +7,7 @@ use crate::block::{
 use blake2::{Blake2b, Digest};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 mod base_committer;
@@ -124,6 +125,12 @@ impl Commit {
 
     pub fn previous_commit_hash(&self) -> &Option<[u8; BLOCK_HASH_LENGTH]> {
         &self.previous_commit_hash
+    }
+}
+
+impl Hash for Commit {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.commit_hash.hash(state)
     }
 }
 

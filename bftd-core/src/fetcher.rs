@@ -227,6 +227,7 @@ impl FetchTask {
         source: bool,
         reference: BlockReference,
     ) -> Result<BlockVerifiedByCommittee, ValidatorIndex> {
+        tracing::debug!("Sending get_block RPC to {peer} to get block {reference}");
         let response = inner
             .rpc
             .rpc(inner.committee.network_key(peer), NetworkRequest(request))

@@ -31,13 +31,14 @@ pub struct Node {
     storage_path: PathBuf,
 }
 
-#[allow(dead_code)]
 pub struct NodeHandle {
     syncer: Arc<Syncer>,
     prometheus_handle: Option<PrometheusJoinHandle>,
     server_handle: Option<BftdServer>,
     runtime: Arc<Runtime>,
     load_gen_handle: Option<JoinHandle<()>>,
+    #[allow(dead_code)]
+    store: Arc<RocksStore>,
 }
 
 impl Node {
@@ -128,7 +129,7 @@ impl Node {
                 BftdServer::start(
                     http_server_bind,
                     mempool_client.clone(),
-                    block_store,
+                    block_store.clone(),
                     syncer.clone(),
                 )
                 .await?,
@@ -148,6 +149,7 @@ impl Node {
             runtime,
             server_handle,
             load_gen_handle,
+            store: block_store,
         })
     }
 }
@@ -157,7 +159,7 @@ impl NodeHandle {
         let mut rh = Vec::with_capacity(v.len());
         for node in v {
             let r = node.runtime.clone();
-            let h = r.spawn(node.stop());
+            let h = r.spawn(node.stop_inner());
             rh.push((r, h));
         }
         for (r, h) in rh {
@@ -166,7 +168,8 @@ impl NodeHandle {
         }
     }
 
-    pub async fn stop(self) {
+    // Caller needs to clone self.runtime before this call and then drop it outside async context
+    async fn stop_inner(self) {
         let mut futures = Vec::new();
         if let Some(load_gen) = self.load_gen_handle {
             load_gen.abort();
@@ -184,5 +187,21 @@ impl NodeHandle {
             panic!("Can't unwrap syncer - bftd server did not stop properly?")
         };
         syncer.stop().await;
+    }
+
+    pub fn stop(self) {
+        // This clone is needed so that runtime is dropped here, rather than in the context of stop_inner
+        let runtime = self.runtime.clone();
+        runtime.block_on(self.stop_inner());
+    }
+
+    #[cfg(test)]
+    pub fn store(&self) -> &Arc<RocksStore> {
+        &self.store
+    }
+
+    #[cfg(test)]
+    pub fn commit_receiver(&self) -> &tokio::sync::watch::Receiver<Option<u64>> {
+        self.syncer.last_commit_receiver()
     }
 }

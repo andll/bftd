@@ -4,6 +4,8 @@ pub mod mempool;
 mod node;
 mod prometheus;
 pub mod server;
+#[cfg(test)]
+mod smoke_tests;
 mod test_cluster;
 
 use crate::node::NodeHandle;

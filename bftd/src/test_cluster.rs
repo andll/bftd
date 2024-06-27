@@ -114,15 +114,24 @@ impl TestCluster {
     }
 
     pub fn start_test_cluster(path: PathBuf) -> anyhow::Result<Vec<NodeHandle>> {
+        Self::start_test_cluster_partially(path, None)
+    }
+
+    pub fn start_test_cluster_partially(
+        path: PathBuf,
+        nodes_to_start: Option<Vec<usize>>,
+    ) -> anyhow::Result<Vec<NodeHandle>> {
         let genesis = Genesis::load(fs::read(Self::genesis_path(&path))?.into())?;
         let genesis = Arc::new(genesis);
-        let mut nodes = Vec::with_capacity(genesis.validators().len());
-        for v in 0..genesis.validators().len() {
+        let nodes_to_start =
+            nodes_to_start.unwrap_or_else(|| (0..genesis.validators().len()).collect());
+        let mut nodes = Vec::with_capacity(nodes_to_start.len());
+        for v in nodes_to_start {
             let peer_dir = Self::peer_path(&path, v);
             let node = Node::load(&peer_dir, genesis.clone())?;
             nodes.push(node);
         }
-        let mut handles = Vec::with_capacity(genesis.validators().len());
+        let mut handles = Vec::with_capacity(nodes.len());
         for node in nodes {
             let handle = node.start(None)?;
             handles.push(handle);
