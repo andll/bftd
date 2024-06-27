@@ -4,6 +4,7 @@ use bftd_core::consensus::Commit;
 use bftd_core::store::CommitStore;
 use futures::future::join_all;
 use std::collections::HashSet;
+use std::env;
 use std::future::Future;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -13,7 +14,7 @@ use tokio::sync::watch;
 #[test]
 fn smoke_test() {
     const BASE_PORT: usize = 11_000;
-    enable_test_logging();
+    enable_test_logging_smoke_test();
     const NUM_PEERS: usize = 10;
     const WAIT_COMMIT: u64 = 128;
     let dir = tempdir::TempDir::new("smoke_test").unwrap();
@@ -27,7 +28,7 @@ fn smoke_test() {
 #[test]
 fn smoke_test_one_down() {
     const BASE_PORT: usize = 11_100;
-    enable_test_logging();
+    enable_test_logging_smoke_test();
     const NUM_PEERS: usize = 10;
     const WAIT_COMMIT_J: u64 = 32; // "J" is a 10th node
     const WAIT_COMMIT_OTHERS: u64 = 64;
@@ -50,7 +51,7 @@ fn smoke_test_one_down() {
 #[test]
 fn smoke_test_catch_up_when_one_node_down() {
     const BASE_PORT: usize = 11_200;
-    enable_test_logging();
+    enable_test_logging_smoke_test();
     const NUM_PEERS: usize = 10;
     const WAIT_COMMIT_I: u64 = 32; // "I" is a 9th node
     const WAIT_COMMIT_OTHERS: u64 = 64;
@@ -157,12 +158,14 @@ async fn wait_for_commit(
     store.get_commit(index).unwrap()
 }
 
-pub fn enable_test_logging() {
+pub fn enable_test_logging_smoke_test() {
     use tracing_subscriber::EnvFilter;
-
+    let v =  env::var("RUST_LOG").unwrap_or("bftd_core::rpc=debug,bftd_core::syncer=debug,bftd_core::fetcher=debug".to_string());
+    let env_filter = EnvFilter::builder().parse(v).unwrap();
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
+        .with_env_filter(env_filter)
         .with_thread_names(true)
+        .with_test_writer()
         .try_init()
         .ok();
 }

@@ -243,7 +243,6 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                             self.last_known_round = cmp::max(self.last_known_round, max_round);
                         }
                     }
-                    // todo handle missing blocks
                     if let Some(next_proposal_round) = self.core.vector_clock_round() {
                         let check_round = next_proposal_round.previous();
                         let mut ready = true;
