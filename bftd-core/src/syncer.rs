@@ -55,13 +55,14 @@ struct SyncerTask<S, B, C, P> {
     block_manager: BlockManager<B>,
 }
 
-struct SyncerInner<B, F> {
+struct SyncerInner<B, F, C> {
     block_store: B,
     last_proposed_round_receiver: watch::Receiver<Round>,
     validator_index: ValidatorIndex,
     committee: Arc<Committee>,
     blocks_sender: mpsc::Sender<(Arc<Block>, BlockSource)>,
     block_filter: F,
+    clock: C,
     metrics: Arc<Metrics>,
 }
 
@@ -70,12 +71,16 @@ enum BlockSource {
     Rpc,
 }
 
+/// This is the maximum clock difference between correct validators that is acceptable.
+/// If a validator clock diverges more than this duration, it's blocks are going to be rejected.
+const SLEEP_UP_TO_NS: u64 = Duration::from_secs(2).as_nanos() as u64;
+
 /// Provides proposer with timestamps.
 /// This is used for reporting block age as well,
 /// so time_ns is called frequently and should be optimized.
 /// Time returned by this clock should always be monotonic.
 /// Implementation of the Clock should account for possible reverse of a local clock.
-pub trait Clock: Send + 'static {
+pub trait Clock: Send + Sync + 'static {
     /// Current timestamp in nanoseconds
     fn time_ns(&self) -> u64;
 }
@@ -135,6 +140,7 @@ impl Syncer {
             committee: committee.clone(),
             block_filter,
             metrics: metrics.clone(),
+            clock: clock.clone(),
         });
         let peer_routers = committee
             .enumerate_validators()
@@ -143,7 +149,6 @@ impl Syncer {
                 let peer_router = PeerRouter {
                     inner: inner.clone(),
                     peer_index: index,
-                    clock: clock.clone(),
                 };
                 (key, Box::new(peer_router) as Box<dyn NetworkRpcRouter>)
             })
@@ -427,12 +432,11 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
 }
 
 struct PeerRouter<B, C, F> {
-    inner: Arc<SyncerInner<B, F>>,
+    inner: Arc<SyncerInner<B, F, C>>,
     peer_index: ValidatorIndex,
-    clock: C,
 }
 
-impl<B: BlockStore, C: Clock + Clone, F: BlockFilter> PeerRouter<B, C, F> {
+impl<B: BlockStore, C: Clock, F: BlockFilter> PeerRouter<B, C, F> {
     fn stream_rpc(
         &mut self,
         req: NetworkRequest,
@@ -448,7 +452,6 @@ impl<B: BlockStore, C: Clock + Clone, F: BlockFilter> PeerRouter<B, C, F> {
                     sender,
                     round,
                     self.peer_index,
-                    self.clock.clone(),
                 ));
                 Ok(receiver)
             }
@@ -468,11 +471,10 @@ impl<B: BlockStore, C: Clock + Clone, F: BlockFilter> PeerRouter<B, C, F> {
     }
 
     async fn stream_task(
-        inner: Arc<SyncerInner<B, F>>,
+        inner: Arc<SyncerInner<B, F, C>>,
         sender: mpsc::Sender<NetworkResponse>,
         mut last_sent: Round,
         peer_index: ValidatorIndex,
-        clock: impl Clock,
     ) {
         let mut round_receiver = inner.last_proposed_round_receiver.clone();
         // todo - check initial condition is ok
@@ -486,7 +488,7 @@ impl<B: BlockStore, C: Clock + Clone, F: BlockFilter> PeerRouter<B, C, F> {
                 else {
                     continue; // todo - more efficient, iterating through each round right now
                 };
-                let age_ms = ns_to_ms(clock.time_ns().saturating_sub(own_block.time_ns()));
+                let age_ms = ns_to_ms(inner.clock.time_ns().saturating_sub(own_block.time_ns()));
                 tracing::debug!(
                     "Sending {} to {peer_index} age {age_ms} ms",
                     own_block.reference()
@@ -507,14 +509,16 @@ impl<B: BlockStore, C: Clock + Clone, F: BlockFilter> PeerRouter<B, C, F> {
     async fn receive_subscription_inner(
         peer: ValidatorIndex,
         mut receiver: mpsc::Receiver<RpcResult<NetworkResponse>>,
-        inner: Arc<SyncerInner<B, F>>,
+        inner: Arc<SyncerInner<B, F, C>>,
     ) -> anyhow::Result<()> {
         tracing::debug!("Starting receiving subscription from {peer}");
         while let Some(response) = receiver.recv().await {
             let response = response?;
             let response = bincode::deserialize::<StreamRpcResponse>(&response.0)?;
             let StreamRpcResponse::Block(block) = response;
-            let block = inner.parse_verify_block(block, BlockMatch::Author(peer))?;
+            let block = inner
+                .parse_verify_block(block, BlockMatch::Author(peer))
+                .await?;
             if inner
                 .blocks_sender
                 .send((block, BlockSource::Subscription))
@@ -531,7 +535,7 @@ impl<B: BlockStore, C: Clock + Clone, F: BlockFilter> PeerRouter<B, C, F> {
     async fn receive_subscription(
         peer: ValidatorIndex,
         receiver: mpsc::Receiver<RpcResult<NetworkResponse>>,
-        inner: Arc<SyncerInner<B, F>>,
+        inner: Arc<SyncerInner<B, F, C>>,
     ) {
         if let Err(err) = Self::receive_subscription_inner(peer, receiver, inner).await {
             tracing::warn!("Error receiving stream from {peer}: {err}");
@@ -539,19 +543,37 @@ impl<B: BlockStore, C: Clock + Clone, F: BlockFilter> PeerRouter<B, C, F> {
     }
 }
 
-impl<B, F: BlockFilter> SyncerInner<B, F> {
-    fn parse_verify_block(&self, data: Bytes, matcher: BlockMatch) -> anyhow::Result<Arc<Block>> {
+impl<B, F: BlockFilter, C: Clock> SyncerInner<B, F, C> {
+    async fn parse_verify_block(
+        &self,
+        data: Bytes,
+        matcher: BlockMatch,
+    ) -> anyhow::Result<Arc<Block>> {
         let block = self
             .committee
             .verify_block(data, matcher, self.metrics.clone())?;
-        self.complete_block_verification(block)
+        self.complete_block_verification(block).await
     }
 
-    fn complete_block_verification(
+    async fn complete_block_verification(
         &self,
         block: BlockVerifiedByCommittee,
     ) -> anyhow::Result<Arc<Block>> {
         let block = block.extract_for_further_verification();
+        let current_time_ns = self.clock.time_ns();
+        let block_in_the_future_ns = block.time_ns().saturating_sub(current_time_ns);
+        if block_in_the_future_ns != 0 {
+            if block_in_the_future_ns < SLEEP_UP_TO_NS {
+                tokio::time::sleep(Duration::from_nanos(block_in_the_future_ns)).await;
+            } else {
+                // todo - this is the only block check that not all correct validator will agree on.
+                bail!(
+                    "Rejecting block {} as it's timestamp is too much in the future: {} ms",
+                    block.reference(),
+                    ns_to_ms(block_in_the_future_ns)
+                );
+            }
+        }
         if let Err(err) = self.block_filter.check_block(&block) {
             bail!(
                 "Block filter verification failed for block {}: {err}",
@@ -566,10 +588,10 @@ impl<B, F: BlockFilter> SyncerInner<B, F> {
         self: Arc<Self>,
         mut receiver: mpsc::Receiver<BlockVerifiedByCommittee>,
     ) {
-        // todo this task might become bottleneck at some point
+        // todo run one task per validator since other validators can starve complete_block_verification
         while let Some(block) = receiver.recv().await {
             let reference = *block.reference();
-            let block = self.complete_block_verification(block);
+            let block = self.complete_block_verification(block).await;
             let block = match block {
                 Err(err) => {
                     log_byzantine!(
