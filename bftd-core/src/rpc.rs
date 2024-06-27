@@ -1,3 +1,4 @@
+use crate::block::MAX_BLOCK_SIZE;
 use crate::metrics::Metrics;
 use crate::network::{Connection, NetworkMessage};
 use crate::network::{ConnectionPool, NoisePublicKey};
@@ -41,7 +42,7 @@ pub enum RpcMessage {
     RpcStreamEOF(u64),
 }
 
-const STREAM_BUFFER_SIZE: u64 = 128 * 1024;
+const STREAM_BUFFER_SIZE: u64 = (MAX_BLOCK_SIZE as u64) * 10;
 
 pub enum PeerRpcTaskCommand {
     Rpc(NetworkRequest, oneshot::Sender<RpcResult<NetworkResponse>>),
@@ -350,6 +351,7 @@ impl PeerTask {
                                 tag,
                                 network_sender: self.connection.sender.clone(),
                             };
+                            // todo track task
                             let stream_task = tokio::spawn(stream_task.run());
                             outbound_streams.insert(tag, (ack_sender, stream_task));
                         }
