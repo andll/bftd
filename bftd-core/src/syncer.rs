@@ -487,6 +487,7 @@ impl<B: BlockStore, C: Clock + Clone, F: BlockFilter> PeerRouter<B, C, F> {
         mut receiver: mpsc::Receiver<RpcResult<NetworkResponse>>,
         inner: Arc<SyncerInner<B, F>>,
     ) -> anyhow::Result<()> {
+        tracing::debug!("Starting receiving subscription from {peer}");
         while let Some(response) = receiver.recv().await {
             let response = response?;
             let response = bincode::deserialize::<StreamRpcResponse>(&response.0)?;
@@ -496,6 +497,7 @@ impl<B: BlockStore, C: Clock + Clone, F: BlockFilter> PeerRouter<B, C, F> {
                 break;
             }
         }
+        tracing::debug!("Receiving subscription from {peer} ended");
         Ok(())
     }
 
