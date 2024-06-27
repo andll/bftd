@@ -140,7 +140,7 @@ impl FetchTask {
                 .network_key(self.block_reference.author),
         );
         if connected {
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            tokio::time::sleep(Duration::from_secs(2)).await;
         }
         let request = RpcRequest::GetBlock(self.block_reference);
         let request = bincode::serialize(&request).expect("Request serialization failed");
