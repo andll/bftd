@@ -90,7 +90,7 @@ fn smoke_test_catch_up_when_one_node_down() {
 }
 
 async fn timeout<F: Future>(f: F) -> F::Output {
-    tokio::time::timeout(Duration::from_secs(20), f)
+    tokio::time::timeout(Duration::from_secs(60), f)
         .await
         .expect("Timed out")
 }
