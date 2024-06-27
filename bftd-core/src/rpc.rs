@@ -261,8 +261,8 @@ impl RpcTask {
         if !peer_tasks.is_empty() {
             join_all(
                 peer_tasks
-                    .iter_mut()
-                    .map(|(k, (_, j))| j.map(|r| (k.clone(), r))),
+                    .into_iter()
+                    .map(|(_, (_stop /*drop stop here*/, j))| j),
             )
             .await;
         }
@@ -406,7 +406,7 @@ impl PeerTask {
                     }
                 }
                 _ = &mut self.stop => {
-                    // stop signalled, connection is being replaced. return true to switch to next connection
+                    // stop signaled. connection is being replaced - return true to switch to next connection
                     return Ok(true);
                 }
             }
