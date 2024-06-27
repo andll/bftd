@@ -1,4 +1,4 @@
-use crate::block::{MAX_BLOCK_SIZE, ValidatorIndex};
+use crate::block::{ValidatorIndex, MAX_BLOCK_SIZE};
 use crate::metrics::Metrics;
 use crate::network::{Connection, NetworkMessage};
 use crate::network::{ConnectionPool, NoisePublicKey};

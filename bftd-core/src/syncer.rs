@@ -17,12 +17,12 @@ use anyhow::bail;
 use bytes::Bytes;
 use futures::FutureExt;
 use serde::{Deserialize, Serialize};
-use std::cmp;
 use std::future::Future;
 use std::ops::Add;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
+use std::{cmp, fmt};
 use tokio::select;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
@@ -43,7 +43,7 @@ struct SyncerTask<S, B, C, P> {
     // note fetcher contains ref to sender part of SyncerTask::blocks_receiver
     fetcher: BlockFetcher,
     last_proposed_round_sender: watch::Sender<Round>,
-    blocks_receiver: mpsc::Receiver<Arc<Block>>,
+    blocks_receiver: mpsc::Receiver<(Arc<Block>, BlockSource)>,
     proposer: P,
     last_decided: AuthorRound,
     last_commit: Option<Commit>,
@@ -60,9 +60,14 @@ struct SyncerInner<B, F> {
     last_proposed_round_receiver: watch::Receiver<Round>,
     validator_index: ValidatorIndex,
     committee: Arc<Committee>,
-    blocks_sender: mpsc::Sender<Arc<Block>>,
+    blocks_sender: mpsc::Sender<(Arc<Block>, BlockSource)>,
     block_filter: F,
     metrics: Arc<Metrics>,
+}
+
+enum BlockSource {
+    Subscription,
+    Rpc,
 }
 
 pub trait Clock: Send + 'static {
@@ -220,7 +225,7 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                     stall_deadline = Instant::now() + Self::STALL_TIMEOUT;
                     let _timer = self.metrics.syncer_main_loop_util_ns.utilization_timer();
                     self.metrics.syncer_main_loop_calls.inc();
-                    for block in blocks.drain(..) {
+                    for (block, source) in blocks.drain(..) {
                         let reference = *block.reference();
                         // todo need more block verification
                         let age_ms = ns_to_ms(self.clock.time_ns().saturating_sub(block.time_ns()));
@@ -231,7 +236,7 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                         self.core.add_blocks(&add_block_result.added);
                         self.fetcher.handle_add_block_result(&reference, &add_block_result);
                         let added_this = add_block_result.added.iter().any(|b|*b.reference() == reference);
-                        tracing::debug!("Received {reference} {} age {age_ms} ms", if added_this {
+                        tracing::debug!("Received {reference}({source}) {} age {age_ms} ms", if added_this {
                             let added_blocks: Vec<_> = add_block_result.added.iter().map(|b|b.reference()).collect();
                             format!("(block accepted, added {added_blocks:?})")
                         } else {
@@ -494,7 +499,12 @@ impl<B: BlockStore, C: Clock + Clone, F: BlockFilter> PeerRouter<B, C, F> {
             let response = bincode::deserialize::<StreamRpcResponse>(&response.0)?;
             let StreamRpcResponse::Block(block) = response;
             let block = inner.parse_verify_block(block, BlockMatch::Author(peer))?;
-            if inner.blocks_sender.send(block).await.is_err() {
+            if inner
+                .blocks_sender
+                .send((block, BlockSource::Subscription))
+                .await
+                .is_err()
+            {
                 break;
             }
         }
@@ -554,7 +564,12 @@ impl<B, F: BlockFilter> SyncerInner<B, F> {
                 }
                 Ok(block) => block,
             };
-            if self.blocks_sender.send(block).await.is_err() {
+            if self
+                .blocks_sender
+                .send((block, BlockSource::Rpc))
+                .await
+                .is_err()
+            {
                 return;
             }
         }
@@ -638,4 +653,13 @@ impl BlockFilter for () {
 
 fn ns_to_ms(ns: u64) -> u64 {
     ns / 1000 / 1000
+}
+
+impl fmt::Display for BlockSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BlockSource::Subscription => write!(f, "sub"),
+            BlockSource::Rpc => write!(f, "rpc"),
+        }
+    }
 }
