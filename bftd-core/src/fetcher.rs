@@ -101,6 +101,7 @@ impl BlockFetcher {
         }
         for previously_missing in &r.previously_missing {
             if let Some(control) = self.fetch_requests.get(previously_missing) {
+                // This can be none because previously_missing can be suspended block which won't have fetch task running
                 control.source.lock().insert(source_ref.author);
             }
         }
