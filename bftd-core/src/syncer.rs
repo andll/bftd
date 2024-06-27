@@ -528,6 +528,7 @@ impl<B, F: BlockFilter> SyncerInner<B, F> {
         self: Arc<Self>,
         mut receiver: mpsc::Receiver<BlockVerifiedByCommittee>,
     ) {
+        // todo this task might become bottleneck at some point
         while let Some(block) = receiver.recv().await {
             let reference = *block.reference();
             let block = self.complete_block_verification(block);
