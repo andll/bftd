@@ -208,32 +208,40 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
         let mut stall_deadline = Instant::now() + Self::STALL_TIMEOUT;
         let mut waiting_leaders: Option<Vec<ValidatorIndex>> = None;
         self.rpc.wait_connected(Duration::from_secs(2)).await;
-        self.rpc.wait_connected(Duration::from_secs(2)).await;
+        const MAX_BLOCK_BATCH: usize = 1024;
+        let mut blocks = Vec::with_capacity(MAX_BLOCK_BATCH);
         loop {
             select! {
-                block = self.blocks_receiver.recv() => {
+                blocks_received = self.blocks_receiver.recv_many(&mut blocks, MAX_BLOCK_BATCH) => {
+                    // main purpose for recv_many is not to propose too often during catch up
+                    if blocks_received == 0 {
+                        return;
+                    }
                     stall_deadline = Instant::now() + Self::STALL_TIMEOUT;
                     let _timer = self.metrics.syncer_main_loop_util_ns.utilization_timer();
                     self.metrics.syncer_main_loop_calls.inc();
-                    let Some(block) = block else {return;};
-                    let reference = *block.reference();
-                    // todo need more block verification
-                    let age_ms = ns_to_ms(self.clock.time_ns().saturating_sub(block.time_ns()));
-                    self.metrics.syncer_received_block_age_ms.with_label_values(&[self.metrics.validator_label(block.author())]).observe(age_ms as f64);
-                    let add_block_result = self.block_manager.add_block(block);
-                    self.core.add_blocks(&add_block_result.added);
-                    self.fetcher.handle_add_block_result(&reference, &add_block_result);
-                    let added_this = add_block_result.added.iter().any(|b|*b.reference() == reference);
-                    tracing::debug!("Received {reference} {} age {age_ms} ms", if added_this {
-                        let added_blocks: Vec<_> = add_block_result.added.iter().map(|b|b.reference()).collect();
-                        format!("(block accepted, added {added_blocks:?})")
-                    } else {
-                        format!("(missing parents new {:?}, old {:?})", add_block_result.new_missing, add_block_result.previously_missing)
-                    });
-                    // todo add max_round as a field to AddBlockResult, avoid iteration
-                    let max_round = add_block_result.added.iter().map(|b|b.round()).max();
-                    if let Some(max_round) = max_round {
-                        self.last_known_round = cmp::max(self.last_known_round, max_round);
+                    for block in blocks.drain(..) {
+                        let reference = *block.reference();
+                        // todo need more block verification
+                        let age_ms = ns_to_ms(self.clock.time_ns().saturating_sub(block.time_ns()));
+                        self.metrics.syncer_received_block_age_ms.with_label_values(&[self.metrics.validator_label(block.author())]).observe(age_ms as f64);
+                        // todo - block manager can benefit from receiving all blocks in one call
+                        // But for the fetcher we need to accurately track which blocks depends on which
+                        let add_block_result = self.block_manager.add_block(block);
+                        self.core.add_blocks(&add_block_result.added);
+                        self.fetcher.handle_add_block_result(&reference, &add_block_result);
+                        let added_this = add_block_result.added.iter().any(|b|*b.reference() == reference);
+                        tracing::debug!("Received {reference} {} age {age_ms} ms", if added_this {
+                            let added_blocks: Vec<_> = add_block_result.added.iter().map(|b|b.reference()).collect();
+                            format!("(block accepted, added {added_blocks:?})")
+                        } else {
+                            format!("(missing parents new {:?}, old {:?})", add_block_result.new_missing, add_block_result.previously_missing)
+                        });
+                        // todo add max_round as a field to AddBlockResult, avoid iteration
+                        let max_round = add_block_result.added.iter().map(|b|b.round()).max();
+                        if let Some(max_round) = max_round {
+                            self.last_known_round = cmp::max(self.last_known_round, max_round);
+                        }
                     }
                     if let Some(next_proposal_round) = self.core.vector_clock_round() {
                         let check_round = next_proposal_round.previous();
