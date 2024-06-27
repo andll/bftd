@@ -95,8 +95,6 @@ impl<S: BlockStore> BlockManager<S> {
                         });
                     }
                 }
-                // todo tests
-                // todo only newly suspended blocks
                 suspended.push(reference);
                 for parent in missing {
                     let entry = self.missing_inverse.entry(parent);
