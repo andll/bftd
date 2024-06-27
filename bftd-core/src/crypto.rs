@@ -4,7 +4,9 @@ use ed25519_consensus::{SigningKey, VerificationKey};
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
 
+/// Signer used to sign blocks.
 pub trait Signer: Send + 'static {
+    /// Signs block bytes using validator private key and returns block signature.
     fn sign_bytes(&self, bytes: &[u8]) -> BlockSignature;
 }
 

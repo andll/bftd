@@ -19,7 +19,16 @@ pub struct Core<S, B> {
     metrics: Arc<Metrics>,
 }
 
+/// Application-specific trait to generate block payload.
 pub trait ProposalMaker: Send + 'static {
+    /// This function is called when core is ready to make a new proposal.
+    /// The result of this function is used as a block payload.
+    ///
+    /// This function should not block,
+    /// and should rather return empty payload when there is nothing to propose.
+    ///
+    /// Returned payload size should be less or equal to MAX_BLOCK_PAYLOAD.
+    /// Returned payload should pass verification by the corresponding BlockFilter.
     fn make_proposal(&mut self) -> Bytes;
 }
 

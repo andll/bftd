@@ -70,11 +70,27 @@ enum BlockSource {
     Rpc,
 }
 
+/// Provides proposer with timestamps.
+/// This is used for reporting block age as well,
+/// so time_ns is called frequently and should be optimized.
+/// Time returned by this clock should always be monotonic.
+/// Implementation of the Clock should account for possible reverse of a local clock.
 pub trait Clock: Send + 'static {
+    /// Current timestamp in nanoseconds
     fn time_ns(&self) -> u64;
 }
 
+/// Application-specific filtering of block payload.
 pub trait BlockFilter: Send + Sync + 'static {
+    /// Checks whether the block payload is valid.
+    ///
+    /// This function should return the same result on all correct validators at any time.
+    /// It should rely on any mutable state other than provided when a blockchain is initialized.
+    ///
+    /// Corresponding application-specific ProposalMaker should always return correct payloads
+    /// that are correct from the perspective of a block filter.
+    ///
+    /// This function is executed concurrently from peer tasks.
     fn check_block(&self, block: &Block) -> anyhow::Result<()>;
 }
 
