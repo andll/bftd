@@ -302,6 +302,7 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                     waiting_leaders = None;
                 }
                 _ = tokio::time::sleep_until(stall_deadline) => {
+                    stall_deadline = Instant::now() + Self::STALL_TIMEOUT;
                     let missing = self.core.missing_validators_for_proposal();
                     let round = self.core.last_proposed_round();
                     tracing::warn!("No activity for {} seconds. Still waiting for validators {missing:?} at round {round}", Self::STALL_TIMEOUT.as_secs());
