@@ -74,6 +74,7 @@ enum BlockSource {
 /// This is the maximum clock difference between correct validators that is acceptable.
 /// If a validator clock diverges more than this duration, it's blocks are going to be rejected.
 const SLEEP_UP_TO_NS: u64 = Duration::from_secs(2).as_nanos() as u64;
+const BLOCKS_CHANNEL_CAPACITY: usize = 2048;
 
 /// Provides proposer with timestamps.
 /// This is used for reporting block age as well,
@@ -131,7 +132,7 @@ impl Syncer {
         let (last_proposed_round_sender, last_proposed_round_receiver) =
             watch::channel(last_proposed_round);
         let last_known_round = last_proposed_round;
-        let (blocks_sender, blocks_receiver) = mpsc::channel(10);
+        let (blocks_sender, blocks_receiver) = mpsc::channel(BLOCKS_CHANNEL_CAPACITY);
         let inner = Arc::new(SyncerInner {
             block_store: block_store.clone(),
             last_proposed_round_receiver,
@@ -234,11 +235,10 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
         let mut stall_deadline = Instant::now() + Self::STALL_TIMEOUT;
         let mut waiting_leaders: Option<Vec<ValidatorIndex>> = None;
         self.rpc.wait_connected(Duration::from_secs(2)).await;
-        const MAX_BLOCK_BATCH: usize = 1024;
-        let mut blocks = Vec::with_capacity(MAX_BLOCK_BATCH);
+        let mut blocks = Vec::with_capacity(BLOCKS_CHANNEL_CAPACITY);
         loop {
             select! {
-                blocks_received = self.blocks_receiver.recv_many(&mut blocks, MAX_BLOCK_BATCH) => {
+                blocks_received = self.blocks_receiver.recv_many(&mut blocks, BLOCKS_CHANNEL_CAPACITY) => {
                     // main purpose for recv_many is not to propose too often during catch up
                     if blocks_received == 0 {
                         return;
