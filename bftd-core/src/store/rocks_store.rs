@@ -9,21 +9,30 @@ use std::path::Path;
 use std::sync::Arc;
 
 pub struct RocksStore {
-    db: DB,
+    db: Arc<DB>,
     metrics: Arc<Metrics>,
 }
 
 impl RocksStore {
+    pub fn from_db(db: Arc<DB>, metrics: Arc<Metrics>) -> Result<Self, rocksdb::Error> {
+        Ok(Self { db, metrics })
+    }
+
     pub fn open(path: impl AsRef<Path>, metrics: Arc<Metrics>) -> Result<Self, rocksdb::Error> {
+        let db = DB::open_cf(&Self::options(), path, Self::cfs())?;
+        let db = Arc::new(db);
+        Self::from_db(db, metrics)
+    }
+
+    pub fn cfs() -> &'static [&'static str] {
+        &["blocks", "index", "commits", "block_commits"]
+    }
+
+    pub fn options() -> Options {
         let mut options = Options::default();
         options.create_if_missing(true);
         options.create_missing_column_families(true);
-        let db = DB::open_cf(
-            &options,
-            path,
-            ["blocks", "index", "commits", "block_commits"],
-        )?;
-        Ok(Self { db, metrics })
+        options
     }
 
     fn decode<T: Into<Bytes>>(&self, v: T) -> Arc<Block> {
