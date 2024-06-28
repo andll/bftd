@@ -568,7 +568,7 @@ impl<B, F: BlockFilter, C: Clock> SyncerInner<B, F, C> {
             } else {
                 // todo - this is the only block check that not all correct validator will agree on.
                 bail!(
-                    "Rejecting block {} as it's timestamp is too much in the future: {} ms",
+                    "Rejecting block {} as it's timestamp is too far in the future: {} ms",
                     block.reference(),
                     ns_to_ms(block_in_the_future_ns)
                 );
