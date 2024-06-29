@@ -407,6 +407,7 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
         if commit.index() % 1000 == 0 {
             tracing::info!("Committed {}", commit);
         }
+        self.block_store.round_committed(leader.round());
         self.last_commit_sender.send(Some(commit.index())).ok();
         self.metrics
             .syncer_last_committed_round

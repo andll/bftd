@@ -135,6 +135,9 @@ mod tests {
 pub trait BlockStore: BlockReader + Send + Sync + 'static {
     fn put(&self, block: Arc<Block>);
     fn flush(&self);
+
+    /// Informs store that **some** leader at round was committed; it can be used to optimize caching
+    fn round_committed(&self, _round: Round) {}
 }
 
 pub trait BlockReader: Sync + 'static {
