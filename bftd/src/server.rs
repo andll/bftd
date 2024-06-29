@@ -179,12 +179,17 @@ impl<B: BlockReader + CommitStore> BftdServerState<B> {
                     let commit = state.block_store.get_commit(commit).expect("Commit not found");
                     // todo cache
                     let blocks = UnrolledCommit::unroll_commit(&commit, &state.block_store);
-                    // todo quite a bit of overhead with empty commits
-                    if blocks.is_empty() {
+                    if tail.skip_empty_commits && blocks.is_empty() {
+                        // todo quite a bit of overhead with empty commits
                         continue;
                     }
                     let commit = UnrolledCommit::from(&commit, &blocks);
-                    let commit = serde_json::to_string_pretty(&commit).expect("Serialization failed");
+                    let commit = if tail.pretty {
+                        serde_json::to_string_pretty(&commit)
+                    } else {
+                        serde_json::to_string(&commit)
+                    };
+                    let commit = commit.expect("Serialization failed");
                     let event = Event::default().data(&commit);
                     yield Ok(event);
                 }
