@@ -24,6 +24,7 @@ pub struct Metrics {
     pub syncer_own_block_commit_age_ms: Histogram,
     pub syncer_main_loop_util_ns: IntCounter,
     pub syncer_main_loop_calls: IntCounter,
+    pub syncer_uncommitted_non_empty_blocks: IntGauge,
 
     pub rpc_connected_peers: IntGauge,
 
@@ -99,6 +100,10 @@ impl Metrics {
             ),
             syncer_main_loop_util_ns: counter!("syncer_main_loop_util_ns", registry),
             syncer_main_loop_calls: counter!("syncer_main_loop_calls", registry),
+            syncer_uncommitted_non_empty_blocks: gauge!(
+                "syncer_uncommitted_non_empty_blocks",
+                registry
+            ),
 
             rpc_connected_peers: gauge!("rpc_connected_peers", registry),
             validator_labels,

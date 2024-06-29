@@ -17,6 +17,7 @@ use anyhow::bail;
 use bytes::Bytes;
 use futures::FutureExt;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::future::Future;
 use std::ops::Add;
 use std::pin::Pin;
@@ -53,6 +54,7 @@ struct SyncerTask<S, B, C, P> {
     last_commit_sender: watch::Sender<Option<u64>>,
     last_known_round: Round,
     block_manager: BlockManager<B>,
+    uncommitted_counter: UncommittedCounter,
 }
 
 struct SyncerInner<B, F, C> {
@@ -195,10 +197,11 @@ impl Syncer {
             last_commit,
             stop: stop_receiver,
             clock,
-            metrics,
             last_commit_sender,
             last_known_round,
             block_manager,
+            uncommitted_counter: UncommittedCounter::new(metrics.clone()),
+            metrics,
         };
         let handle = tokio::spawn(syncer.run());
         Syncer {
@@ -254,6 +257,7 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                         // todo - block manager can benefit from receiving all blocks in one call
                         // But for the fetcher we need to accurately track which blocks depends on which
                         let add_block_result = self.block_manager.add_block(block);
+                        self.uncommitted_counter.add(&add_block_result.added);
                         self.core.add_blocks(&add_block_result.added);
                         self.fetcher.handle_add_block_result(&reference, &add_block_result);
                         let added_this = add_block_result.added.iter().any(|b|*b.reference() == reference);
@@ -363,6 +367,7 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
             .unwrap_or_default();
         let interpreter = CommitInterpreter::new(&self.block_store);
         let all_blocks = interpreter.interpret_commit(index, leader.clone());
+        self.uncommitted_counter.committed(&all_blocks);
         for block in &all_blocks {
             if block.author() == self.core.validator_index() {
                 let age_ns = self.clock.time_ns().saturating_sub(block.time_ns());
@@ -699,5 +704,70 @@ impl fmt::Display for BlockSource {
             BlockSource::Subscription => write!(f, "sub"),
             BlockSource::Rpc => write!(f, "rpc"),
         }
+    }
+}
+
+struct UncommittedCounter {
+    uncommitted_non_empty_blocks: HashSet<BlockReference>,
+    metrics: Arc<Metrics>,
+}
+
+impl UncommittedCounter {
+    pub fn new(metrics: Arc<Metrics>) -> Self {
+        // It's ok to have this clean on startup
+        Self {
+            uncommitted_non_empty_blocks: Default::default(),
+            metrics,
+        }
+    }
+    pub fn add(&mut self, blocks: &[Arc<Block>]) {
+        for added in blocks {
+            if !added.payload().is_empty() {
+                assert!(self.uncommitted_non_empty_blocks.insert(*added.reference()));
+            }
+        }
+        self.metrics
+            .syncer_uncommitted_non_empty_blocks
+            .set(self.uncommitted_non_empty_blocks.len() as i64);
+    }
+
+    pub fn committed(&mut self, blocks: &[Arc<Block>]) {
+        for block in blocks {
+            if !block.payload().is_empty() {
+                // block might not be in the set since we don't report uncommitted blocks on restart
+                self.uncommitted_non_empty_blocks.remove(block.reference());
+            }
+        }
+        self.metrics
+            .syncer_uncommitted_non_empty_blocks
+            .set(self.uncommitted_non_empty_blocks.len() as i64);
+    }
+
+    pub fn has_uncommitted_non_empty(&self) -> bool {
+        !self.uncommitted_non_empty_blocks.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::block::tests::blk_p;
+
+    #[test]
+    fn uncommitted_counter_test() {
+        let mut uc = UncommittedCounter::new(Metrics::new_test());
+        let b1 = blk_p(0, 0, vec![], &[1]);
+        let b2 = blk_p(0, 0, vec![], &[]);
+        let b3 = blk_p(0, 0, vec![], &[2]);
+        uc.add(&[b2.clone(), b3.clone()]);
+        assert_eq!(uc.uncommitted_non_empty_blocks.len(), 1);
+        uc.committed(&[b1]); // non empty but was not reported previously
+        assert_eq!(uc.uncommitted_non_empty_blocks.len(), 1);
+        uc.committed(&[b2]); // reported but empty
+        assert_eq!(uc.uncommitted_non_empty_blocks.len(), 1);
+        assert!(uc.has_uncommitted_non_empty());
+        uc.committed(&[b3]);
+        assert_eq!(uc.uncommitted_non_empty_blocks.len(), 0);
+        assert!(!uc.has_uncommitted_non_empty());
     }
 }

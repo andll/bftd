@@ -630,12 +630,21 @@ pub mod tests {
     }
 
     pub fn blk(author: u64, round: u64, parents: Vec<BlockReference>) -> Arc<Block> {
+        blk_p(author, round, parents, &[])
+    }
+
+    pub fn blk_p(
+        author: u64,
+        round: u64,
+        parents: Vec<BlockReference>,
+        payload: &[u8],
+    ) -> Arc<Block> {
         Arc::new(Block::new(
             Round(round),
             ValidatorIndex(author),
             ChainId::CHAIN_ID_TEST,
             0, /* time_ns */
-            &[],
+            payload,
             parents,
             &BR_SIGNATURE,
             &BR_BLOCK_HASH,
