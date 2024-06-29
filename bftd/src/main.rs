@@ -11,9 +11,10 @@ mod test_cluster;
 use crate::node::NodeHandle;
 use crate::test_cluster::{start_node, TestCluster};
 use anyhow::bail;
+use bftd_core::block::ValidatorIndex;
 use bftd_core::protocol_config::ProtocolConfigBuilder;
 use clap::Parser;
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use std::path::PathBuf;
 use std::time::Duration;
 use std::{fs, process, thread};
@@ -50,9 +51,23 @@ struct NewChainArgs {
     #[arg(
         long,
         short = 's',
-        help = "Bind address for bftd server. Bftd server is not started if this is not set."
+        help = "Bind address for bftd server. Bftd server is not started if this(or http_server_base_port) is not set.",
+        conflicts_with = "http_server_base_port"
     )]
     http_server_bind: Option<SocketAddr>,
+    #[arg(
+        long,
+        help = "Base port for binding bftd server. Bftd server is not started if this(or http_server_bind) is not set.",
+        conflicts_with = "http_server_bind"
+    )]
+    http_server_base_port: Option<u16>,
+    #[arg(
+        long,
+        help = "Ip address for binding bftd server when http_server_base_port is set.",
+        default_value = "127.0.0.1",
+        requires = "http_server_base_port"
+    )]
+    http_server_address: IpAddr,
     #[arg(
         long,
         short = 't',
@@ -148,12 +163,23 @@ fn handle_new_chain(args: NewChainArgs) -> anyhow::Result<()> {
             protocol_config.empty_commit_timeout().as_millis()
         );
     }
+    let http_server_bind = |vi: ValidatorIndex| {
+        if let Some(bind) = args.http_server_bind {
+            Some(bind)
+        } else if let Some(base_port) = args.http_server_base_port {
+            let address = args.http_server_address;
+            Some(SocketAddr::new(address, base_port + (vi.0 as u16)))
+        } else {
+            None
+        }
+    };
+
     let test_cluster = TestCluster::generate(
         &args.name,
         args.peer_addresses,
         args.bind,
         args.prometheus_bind,
-        args.http_server_bind,
+        http_server_bind,
         protocol_config.build(),
     );
     println!("Storing test cluster into {path:?}");

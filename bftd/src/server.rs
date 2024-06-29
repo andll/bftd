@@ -203,6 +203,10 @@ impl<B: BlockReader + CommitStore> BftdServerState<B> {
 struct Tail {
     #[serde(default)]
     from: u64,
+    #[serde(default)]
+    skip_empty_commits: bool,
+    #[serde(default)]
+    pretty: bool,
 }
 
 #[derive(Serialize)]
