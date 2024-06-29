@@ -139,6 +139,7 @@ mod tests {
     use super::*;
     use crate::block::tests::{blk, br};
     use crate::block::{Round, ValidatorIndex};
+    use crate::store::BlockReader;
     use parking_lot::Mutex;
     use std::collections::HashSet;
 
@@ -188,7 +189,9 @@ mod tests {
         }
 
         fn flush(&self) {}
+    }
 
+    impl BlockReader for Mutex<HashMap<BlockReference, Arc<Block>>> {
         fn get(&self, key: &BlockReference) -> Option<Arc<Block>> {
             self.lock().get(key).cloned()
         }
@@ -218,10 +221,6 @@ mod tests {
             _author: ValidatorIndex,
             _round: Round,
         ) -> Vec<Arc<Block>> {
-            unimplemented!()
-        }
-
-        fn linked_to_round(&self, _block: &Arc<Block>, _round: Round) -> Vec<Arc<Block>> {
             unimplemented!()
         }
     }

@@ -9,7 +9,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use bftd_core::block::{Block, BlockHash, BlockReference, Round, ValidatorIndex};
 use bftd_core::consensus::Commit;
-use bftd_core::store::BlockStore;
+use bftd_core::store::BlockReader;
 use bftd_core::store::CommitStore;
 use bftd_core::syncer::Syncer;
 use bytes::Bytes;
@@ -29,7 +29,7 @@ pub struct BftdServer {
 }
 
 impl BftdServer {
-    pub async fn start<B: BlockStore + CommitStore>(
+    pub async fn start<B: BlockReader + CommitStore>(
         address: SocketAddr,
         mempool_client: BasicMempoolClient,
         block_store: B,
@@ -73,7 +73,7 @@ struct BftdServerState<B> {
 
 type HttpResult<T> = Result<T, (StatusCode, &'static str)>;
 
-impl<B: BlockStore + CommitStore> BftdServerState<B> {
+impl<B: BlockReader + CommitStore> BftdServerState<B> {
     async fn get_block(
         State(state): State<Arc<Self>>,
         headers: HeaderMap,
@@ -227,7 +227,7 @@ impl<'a> UnrolledCommit<'a> {
     /// Load all blocks in the commit, skipping blocks with empty payload
     fn unroll_commit(
         commit: &Commit,
-        block_store: &impl BlockStore,
+        block_store: &impl BlockReader,
     ) -> Vec<(Arc<Block>, TransactionsPayloadReader)> {
         let blocks = block_store.get_multi(commit.all_blocks());
         blocks

@@ -132,9 +132,12 @@ mod tests {
     }
 }
 
-pub trait BlockStore: Send + Sync + 'static {
+pub trait BlockStore: BlockReader + Send + Sync + 'static {
     fn put(&self, block: Arc<Block>);
     fn flush(&self);
+}
+
+pub trait BlockReader: Sync + 'static {
     fn get(&self, key: &BlockReference) -> Option<Arc<Block>>;
     fn get_multi<'a>(
         &self,
@@ -155,7 +158,31 @@ pub trait BlockStore: Send + Sync + 'static {
 
     // Returns all the ancestors of the later_block to the `earlier_round`, assuming that there is
     // a path to them.
-    fn linked_to_round(&self, block: &Arc<Block>, round: Round) -> Vec<Arc<Block>>;
+    fn linked_to_round(&self, block: &Arc<Block>, round: Round) -> Vec<Arc<Block>> {
+        // todo tests
+        // todo optimize / index
+        let mut parents = vec![block.clone()];
+        for r in (round.0..block.round().0).rev() {
+            let blocks_for_round = self.get_blocks_by_round(Round(r));
+            parents = blocks_for_round
+                .iter()
+                .filter_map(|block| {
+                    if parents
+                        .iter()
+                        .any(|x| x.parents().contains(block.reference()))
+                    {
+                        Some(block.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if parents.is_empty() {
+                break;
+            }
+        }
+        parents
+    }
 }
 
 impl BlockStore for MemoryBlockStore {
@@ -167,7 +194,8 @@ impl BlockStore for MemoryBlockStore {
     }
 
     fn flush(&self) {}
-
+}
+impl BlockReader for MemoryBlockStore {
     fn get(&self, key: &BlockReference) -> Option<Arc<Block>> {
         self.read()
             .get(&key.round)?
@@ -234,33 +262,6 @@ impl BlockStore for MemoryBlockStore {
             vec![]
         }
     }
-
-    fn linked_to_round(&self, block: &Arc<Block>, round: Round) -> Vec<Arc<Block>> {
-        let lock = self.read();
-        let mut parents = vec![block.clone()];
-        for r in (round.0..block.round().0).rev() {
-            let r = Round(r);
-            let map = lock.get(&r);
-            let Some(map) = map else { return vec![] };
-            parents = map
-                .iter()
-                .filter_map(|(_, block)| {
-                    if parents
-                        .iter()
-                        .any(|x| x.parents().contains(block.reference()))
-                    {
-                        Some(block.clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            if parents.is_empty() {
-                break;
-            }
-        }
-        parents
-    }
 }
 
 impl<T: BlockStore> BlockStore for Arc<T> {
@@ -271,7 +272,9 @@ impl<T: BlockStore> BlockStore for Arc<T> {
     fn flush(&self) {
         self.deref().flush()
     }
+}
 
+impl<T: BlockReader + Send> BlockReader for Arc<T> {
     fn get(&self, key: &BlockReference) -> Option<Arc<Block>> {
         self.deref().get(key)
     }

@@ -1,8 +1,8 @@
 use crate::block::{Block, BlockReference, Round, ValidatorIndex};
 use crate::consensus::Commit;
 use crate::metrics::Metrics;
-use crate::store::BlockStore;
 use crate::store::CommitStore;
+use crate::store::{BlockReader, BlockStore};
 use bytes::Bytes;
 use rocksdb::{ColumnFamily, Direction, IteratorMode, Options, DB};
 use std::path::Path;
@@ -74,7 +74,8 @@ impl BlockStore for RocksStore {
     fn flush(&self) {
         // self.db.flush().expect("Flush failed");
     }
-
+}
+impl BlockReader for RocksStore {
     fn get(&self, key: &BlockReference) -> Option<Arc<Block>> {
         let block_key = key.round_author_hash_encoding();
         let block = self
@@ -154,33 +155,6 @@ impl BlockStore for RocksStore {
         let iter = bound_iter(iter, &to);
 
         iter.map(|data| self.decode(data)).collect()
-    }
-
-    fn linked_to_round(&self, block: &Arc<Block>, round: Round) -> Vec<Arc<Block>> {
-        // todo tests
-        // todo code dedup with MemoryStore
-        // todo optimize / index
-        let mut parents = vec![block.clone()];
-        for r in (round.0..block.round().0).rev() {
-            let blocks_for_round = self.get_blocks_by_round(Round(r));
-            parents = blocks_for_round
-                .iter()
-                .filter_map(|block| {
-                    if parents
-                        .iter()
-                        .any(|x| x.parents().contains(block.reference()))
-                    {
-                        Some(block.clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            if parents.is_empty() {
-                break;
-            }
-        }
-        parents
     }
 }
 

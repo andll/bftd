@@ -6,7 +6,7 @@ use crate::block::{
 };
 use crate::committee::Committee;
 use crate::committee::Stake;
-use crate::store::BlockStore;
+use crate::store::BlockReader;
 use crate::threshold_clock::{QuorumThreshold, StakeAggregator};
 use std::collections::HashMap;
 use std::iter::Sum;
@@ -51,7 +51,7 @@ pub struct BaseCommitter<B> {
     options: BaseCommitterOptions,
 }
 
-impl<B: BlockStore> BaseCommitter<B> {
+impl<B: BlockReader> BaseCommitter<B> {
     pub fn new(committee: Arc<Committee>, block_store: B) -> Self {
         Self {
             committee,

@@ -12,7 +12,7 @@ use crate::protocol_config::ProtocolConfig;
 use crate::rpc::{
     NetworkRequest, NetworkResponse, NetworkRpc, NetworkRpcRouter, PeerRpcTaskCommand, RpcResult,
 };
-use crate::store::BlockStore;
+use crate::store::{BlockReader, BlockStore};
 use crate::store::{CommitInterpreter, CommitStore};
 use anyhow::bail;
 use bytes::Bytes;
@@ -454,7 +454,7 @@ struct PeerRouter<B, C, F> {
     peer_index: ValidatorIndex,
 }
 
-impl<B: BlockStore, C: Clock, F: BlockFilter> PeerRouter<B, C, F> {
+impl<B: BlockReader + Send, C: Clock, F: BlockFilter> PeerRouter<B, C, F> {
     fn stream_rpc(
         &mut self,
         req: NetworkRequest,
@@ -632,7 +632,9 @@ impl<B, F: BlockFilter, C: Clock> SyncerInner<B, F, C> {
     }
 }
 
-impl<B: BlockStore, C: Clock + Clone, F: BlockFilter> NetworkRpcRouter for PeerRouter<B, C, F> {
+impl<B: BlockReader + Send, C: Clock + Clone, F: BlockFilter> NetworkRpcRouter
+    for PeerRouter<B, C, F>
+{
     fn rpc(&mut self, req: NetworkRequest) -> NetworkResponse {
         self.rpc(req).unwrap() // todo handle error
     }

@@ -5,7 +5,7 @@ use crate::block::{AuthorRound, Round, ValidatorIndex};
 use crate::committee::Committee;
 use crate::consensus::base_committer::BaseCommitterOptions;
 use crate::metrics::Metrics;
-use crate::store::BlockStore;
+use crate::store::BlockReader;
 use std::{collections::VecDeque, sync::Arc};
 
 use super::{base_committer::BaseCommitter, CommitDecision, LeaderStatus, DEFAULT_WAVE_LENGTH};
@@ -18,7 +18,7 @@ pub struct UniversalCommitter<B> {
     metrics: Arc<Metrics>,
 }
 
-impl<B: BlockStore> UniversalCommitter<B> {
+impl<B: BlockReader> UniversalCommitter<B> {
     /// Try to commit part of the dag. This function is idempotent and returns a list of
     /// ordered decided leaders.
     // #[tracing::instrument(skip_all, fields(last_decided = %last_decided))]
@@ -105,7 +105,7 @@ pub struct UniversalCommitterBuilder<B> {
     pipeline: bool,
 }
 
-impl<B: BlockStore + Clone> UniversalCommitterBuilder<B> {
+impl<B: BlockReader + Clone> UniversalCommitterBuilder<B> {
     pub fn new(committee: Arc<Committee>, block_store: B, metrics: Arc<Metrics>) -> Self {
         Self {
             committee,
