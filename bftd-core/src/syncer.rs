@@ -236,11 +236,8 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
     pub async fn run(mut self) {
         self.try_make_proposal();
         let (mut committed, mut skipped) = (0usize, 0usize);
-        let mut proposal_deadline: Pin<Box<dyn Future<Output = ()> + Send>> =
-            futures::future::pending().boxed();
-        let mut proposal_deadline_set = false;
+        let mut proposal_deadline = ProposalDeadline::new();
         let mut stall_deadline = Instant::now() + Self::STALL_TIMEOUT;
-        let mut waiting_leaders: Option<Vec<ValidatorIndex>> = None;
         self.rpc.wait_connected(Duration::from_secs(2)).await;
         let mut blocks = Vec::with_capacity(BLOCKS_CHANNEL_CAPACITY);
         loop {
@@ -279,30 +276,29 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                     }
                     if let Some(next_proposal_round) = self.core.vector_clock_round() {
                         let check_round = next_proposal_round.previous();
-                        let mut ready = true;
-                        let leaders = self.committer.get_leaders(check_round);
-                        for leader in &leaders {
-                            // todo - exists method instead of get
+                        // todo use ValidatorSet instead of Vec
+                        let mut wait_leaders = self.committer.get_leaders(check_round);
+                        wait_leaders.retain(|leader| {
                             if self.block_store.get_blocks_at_author_round(*leader, check_round).is_empty() {
-                                if !self.rpc.is_connected(self.committee().network_key(*leader)) {
+                                if self.rpc.is_connected(self.committee().network_key(*leader)) {
+                                    tracing::debug!("Not ready to make proposal, missing {}{}", leader, check_round);
+                                    true
+                                } else {
                                     tracing::debug!("Missing leader {}{}, not waiting because there is no connection", leader, check_round);
-                                    continue;
+                                    false
                                 }
-                                tracing::debug!("Not ready to make proposal, missing {}{}", leader, check_round);
-                                ready = false;
-                                break;
+                            } else {
+                                // Leader block is present
+                                false
                             }
-                        }
-                        if ready {
+                        });
+                        if wait_leaders.is_empty() {
                             self.try_make_proposal();
-                            proposal_deadline = futures::future::pending().boxed();
-                            proposal_deadline_set = false;
-                            waiting_leaders = None;
+                            proposal_deadline.reset();
                         } else {
-                            if !proposal_deadline_set {
-                                proposal_deadline = tokio::time::sleep_until(Instant::now().add(self.protocol_config.leader_timeout)).boxed();
-                                proposal_deadline_set = true;
-                                waiting_leaders = Some(leaders);
+                            if !proposal_deadline.is_set() {
+                                let deadline = Instant::now().add(self.protocol_config.leader_timeout);
+                                proposal_deadline.set_leaders_deadline(deadline, wait_leaders);
                             }
                         }
                     }
@@ -323,17 +319,15 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                         log::info!("stat: committed {}, skipped {}", committed, skipped);
                     }
                 }
-                _ = &mut proposal_deadline => {
+                _ = proposal_deadline.future() => {
                     let _timer = self.metrics.syncer_main_loop_util_ns.utilization_timer();
                     self.metrics.syncer_main_loop_calls.inc();
                     let waiting_round = self.core.vector_clock_round().unwrap_or_default().previous();
-                    let timeouts: Vec<_> = waiting_leaders.as_ref().unwrap().iter().map(|l|AuthorRound::new(*l, waiting_round)).collect();
+                    let timeouts: Vec<_> = proposal_deadline.waiting_validators.as_ref().unwrap().iter().map(|l|AuthorRound::new(*l, waiting_round)).collect();
                     self.metrics.syncer_leader_timeouts.inc();
                     tracing::warn!("Leader timeout {timeouts:?}");
                     self.try_make_proposal();
-                    proposal_deadline = futures::future::pending().boxed();
-                    proposal_deadline_set = false;
-                    waiting_leaders = None;
+                    proposal_deadline.reset();
                 }
                 _ = tokio::time::sleep_until(stall_deadline) => {
                     stall_deadline = Instant::now() + Self::STALL_TIMEOUT;
@@ -749,6 +743,42 @@ impl UncommittedCounter {
 
     pub fn has_uncommitted_non_empty(&self) -> bool {
         !self.uncommitted_non_empty_blocks.is_empty()
+    }
+}
+
+struct ProposalDeadline {
+    future: Pin<Box<dyn Future<Output = ()> + Send + 'static>>,
+    is_set: bool,
+    waiting_validators: Option<Vec<ValidatorIndex>>,
+}
+
+impl ProposalDeadline {
+    pub fn new() -> Self {
+        Self {
+            future: futures::future::pending().boxed(),
+            is_set: false,
+            waiting_validators: None,
+        }
+    }
+    pub fn set_leaders_deadline(&mut self, deadline: Instant, waiting: Vec<ValidatorIndex>) {
+        self.future = tokio::time::sleep_until(deadline).boxed();
+        self.waiting_validators = Some(waiting);
+        self.is_set = true;
+    }
+
+    pub fn reset(&mut self) {
+        self.future = futures::future::pending().boxed();
+        self.waiting_validators = None;
+        self.is_set = false;
+    }
+
+    // Should be combined with future_set() check
+    pub fn future(&mut self) -> &mut Pin<Box<dyn Future<Output = ()> + Send + 'static>> {
+        &mut self.future
+    }
+
+    pub fn is_set(&self) -> bool {
+        self.is_set
     }
 }
 
