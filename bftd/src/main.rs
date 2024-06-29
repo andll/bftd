@@ -30,15 +30,35 @@ enum Args {
 struct NewChainArgs {
     name: String,
     peer_addresses: Vec<String>,
-    #[arg(long)]
+    #[arg(
+        long,
+        help = "Do not check if peer addresses can be resolved locally when generating genesis"
+    )]
     no_check_peer_address: bool,
-    #[arg(long, short = 'b')]
+    #[arg(
+        long,
+        short = 'b',
+        help = "Protocol bind address. If not set, corresponding address from peer_addresses is used"
+    )]
     bind: Option<String>,
-    #[arg(long, short = 'p')]
+    #[arg(
+        long,
+        short = 'p',
+        help = "Bind address for prometheus server. Prometheus server is not started if this is not set"
+    )]
     prometheus_bind: Option<SocketAddr>,
-    #[arg(long, short = 's')]
+    #[arg(
+        long,
+        short = 's',
+        help = "Bind address for bftd server. Bftd server is not started if this is not set."
+    )]
     http_server_bind: Option<SocketAddr>,
-    #[arg(long, short = 't', requires = "prometheus_bind")]
+    #[arg(
+        long,
+        short = 't',
+        requires = "prometheus_bind",
+        help = "Path to template file for prometheus configuration. If not set prometheus configuration won't be generated."
+    )]
     prometheus_template: Option<PathBuf>,
 }
 
