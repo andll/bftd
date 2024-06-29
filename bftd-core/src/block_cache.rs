@@ -15,11 +15,14 @@ struct BlockCacheInner {
     low_watermark_included: Round,
 }
 
-impl<B: BlockReader> BlockCache<B> {
-    // Helps with synchronization and linearizer
-    const PRESERVE_ROUNDS_AFTER_COMMIT: u64 = 1000;
-
-    pub fn new(store: B, low_watermark_included: Round) -> Self {
+impl<B: BlockStore + CommitStore> BlockCache<B> {
+    pub fn new(store: B) -> Self {
+        let partially_committed_round = store.last_commit().map(|c| c.round()).unwrap_or_default();
+        let low_watermark_included = Round(
+            partially_committed_round
+                .0
+                .saturating_sub(Self::PRESERVE_ROUNDS_AFTER_COMMIT),
+        );
         let cache = Self::load_cache(&store, low_watermark_included);
         let cache = BlockCacheInner {
             cache,
@@ -28,6 +31,11 @@ impl<B: BlockReader> BlockCache<B> {
         let cache = RwLock::new(cache);
         Self { cache, store }
     }
+}
+
+impl<B: BlockReader> BlockCache<B> {
+    // Helps with synchronization and linearizer
+    const PRESERVE_ROUNDS_AFTER_COMMIT: u64 = 1000;
 
     pub fn update_watermark(&self, new_low_watermark_included: Round) {
         self.cache

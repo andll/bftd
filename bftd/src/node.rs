@@ -3,6 +3,7 @@ use crate::load_gen::{LoadGen, LoadGenConfig, LoadGenMetrics};
 use crate::mempool::{BasicMempool, TransactionsPayloadBlockFilter};
 use crate::prometheus::{start_prometheus_server, PrometheusJoinHandle};
 use crate::server::BftdServer;
+use bftd_core::block_cache::BlockCache;
 use bftd_core::committee::resolve_one;
 use bftd_core::core::Core;
 use bftd_core::crypto::Ed25519Signer;
@@ -38,7 +39,7 @@ pub struct NodeHandle {
     runtime: Arc<Runtime>,
     load_gen_handle: Option<JoinHandle<()>>,
     #[allow(dead_code)]
-    store: Arc<RocksStore>,
+    store: Arc<BlockCache<RocksStore>>,
 }
 
 impl Node {
@@ -99,6 +100,7 @@ impl Node {
         let registry = Registry::new();
         let metrics = Metrics::new_in_registry(&registry, &committee);
         let block_store = RocksStore::open(&self.storage_path, metrics.clone())?;
+        let block_store = BlockCache::new(block_store);
         let block_store = Arc::new(block_store);
         let prometheus_handle = if let Some(prometheus_bind) = self.config.prometheus_bind {
             Some(start_prometheus_server(prometheus_bind, &registry).await?)
@@ -198,7 +200,7 @@ impl NodeHandle {
     }
 
     #[cfg(test)]
-    pub fn store(&self) -> &Arc<RocksStore> {
+    pub fn store(&self) -> &Arc<BlockCache<RocksStore>> {
         &self.store
     }
 

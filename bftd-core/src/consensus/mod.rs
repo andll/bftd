@@ -123,6 +123,10 @@ impl Commit {
         &self.commit_hash
     }
 
+    pub fn round(&self) -> Round {
+        self.leader.round()
+    }
+
     pub fn previous_commit_hash(&self) -> &Option<[u8; BLOCK_HASH_LENGTH]> {
         &self.previous_commit_hash
     }
