@@ -137,6 +137,10 @@ impl TransactionsPayloadReader {
         self.offsets.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.offsets.is_empty()
+    }
+
     pub fn get_bytes(&self, index: usize) -> Option<Bytes> {
         let from = *self.offsets.get(index)?;
         let to = self.index_upper_bound(index);

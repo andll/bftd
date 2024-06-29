@@ -1,8 +1,10 @@
 use crate::mempool::{BasicMempoolClient, TransactionsPayloadReader, MAX_TRANSACTION};
-use axum::extract::{DefaultBodyLimit, Path, State};
+use async_stream::stream;
+use axum::extract::{DefaultBodyLimit, Path, Query, State};
 use axum::http::header::ACCEPT;
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::response::sse::{Event, KeepAlive};
+use axum::response::{IntoResponse, Response, Sse};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use bftd_core::block::{Block, BlockHash, BlockReference, Round, ValidatorIndex};
@@ -11,7 +13,8 @@ use bftd_core::store::BlockStore;
 use bftd_core::store::CommitStore;
 use bftd_core::syncer::Syncer;
 use bytes::Bytes;
-use serde::Serialize;
+use futures::Stream;
+use serde::{Deserialize, Serialize, Serializer};
 use std::future::IntoFuture;
 use std::io;
 use std::net::SocketAddr;
@@ -40,6 +43,7 @@ impl BftdServer {
         let state = Arc::new(state);
         let app = Router::new()
             .route("/send", post(BftdServerState::send))
+            .route("/tail", get(BftdServerState::tail))
             .route(
                 "/blocks/:round/:author/:hash",
                 get(BftdServerState::get_block),
@@ -153,6 +157,93 @@ impl<B: BlockStore + CommitStore> BftdServerState<B> {
             StatusCode::SERVICE_UNAVAILABLE
         }
     }
+
+    async fn tail(
+        State(state): State<Arc<Self>>,
+        Query(tail): Query<Tail>,
+    ) -> Result<Sse<impl Stream<Item = anyhow::Result<Event>>>, StatusCode> {
+        let last_commit = state
+            .syncer
+            .last_commit_receiver()
+            .borrow()
+            .unwrap_or_default();
+        if tail.from > last_commit {
+            return Err(StatusCode::NOT_FOUND);
+        }
+        let mut from = tail.from;
+        let mut commit_receiver = state.syncer.last_commit_receiver().clone();
+        let stream = stream! {
+            loop {
+                let last = commit_receiver.borrow_and_update().map(|c|c+1).unwrap_or_default();
+                for commit in from..last {
+                    let commit = state.block_store.get_commit(commit).expect("Commit not found");
+                    // todo cache
+                    let blocks = UnrolledCommit::unroll_commit(&commit, &state.block_store);
+                    // todo quite a bit of overhead with empty commits
+                    if blocks.is_empty() {
+                        continue;
+                    }
+                    let commit = UnrolledCommit::from(&commit, &blocks);
+                    let commit = serde_json::to_string_pretty(&commit).expect("Serialization failed");
+                    let event = Event::default().data(&commit);
+                    yield Ok(event);
+                }
+                from = last;
+                if let Err(_) = commit_receiver.changed().await {
+                    break;
+                }
+            }
+        };
+        let sse = Sse::new(stream).keep_alive(KeepAlive::default());
+        Ok(sse)
+    }
+}
+
+#[derive(Deserialize)]
+struct Tail {
+    #[serde(default)]
+    from: u64,
+}
+
+#[derive(Serialize)]
+struct UnrolledCommit<'a> {
+    commit: JsonCommit,
+    blocks: Vec<JsonBlock<'a>>,
+}
+
+impl<'a> UnrolledCommit<'a> {
+    pub fn from(commit: &Commit, blocks: &'a [(Arc<Block>, TransactionsPayloadReader)]) -> Self {
+        let info = JsonCommit::from_commit(commit);
+        let blocks = blocks
+            .iter()
+            .map(|(b, t)| JsonBlock::from_block(b, t))
+            .collect();
+        Self {
+            commit: info,
+            blocks,
+        }
+    }
+
+    /// Load all blocks in the commit, skipping blocks with empty payload
+    fn unroll_commit(
+        commit: &Commit,
+        block_store: &impl BlockStore,
+    ) -> Vec<(Arc<Block>, TransactionsPayloadReader)> {
+        let blocks = block_store.get_multi(commit.all_blocks());
+        blocks
+            .into_iter()
+            .filter_map(|b| {
+                let b = b.expect("Block referenced by commit not found in store");
+                let reader = TransactionsPayloadReader::new_verify(b.payload_bytes())
+                    .expect("Locally stored block has incorrect payload");
+                if reader.is_empty() {
+                    None
+                } else {
+                    Some((b, reader))
+                }
+            })
+            .collect()
+    }
 }
 
 #[derive(Serialize)]
@@ -162,7 +253,7 @@ struct JsonBlock<'a> {
     chain_id: String,
     time_ns: u64,
     parents: Vec<String>,
-    transactions: Vec<&'a [u8]>,
+    transactions: Vec<TransactionSer<'a>>,
 }
 #[derive(Serialize)]
 struct JsonCommit {
@@ -175,6 +266,17 @@ struct JsonCommit {
     commit_hash: String,
 }
 
+struct TransactionSer<'a>(&'a [u8]);
+
+impl<'a> Serialize for TransactionSer<'a> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&hex::encode(self.0))
+    }
+}
+
 impl<'a> JsonBlock<'a> {
     pub fn from_block(block: &'a Block, payload_reader: &'a TransactionsPayloadReader) -> Self {
         Self {
@@ -183,7 +285,7 @@ impl<'a> JsonBlock<'a> {
             chain_id: format_hash(&block.chain_id().0),
             time_ns: block.time_ns(),
             parents: block.parents().iter().map(format_block_reference).collect(),
-            transactions: payload_reader.iter_slices().collect(),
+            transactions: payload_reader.iter_slices().map(TransactionSer).collect(),
         }
     }
 }

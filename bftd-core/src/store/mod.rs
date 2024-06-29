@@ -136,6 +136,15 @@ pub trait BlockStore: Send + Sync + 'static {
     fn put(&self, block: Arc<Block>);
     fn flush(&self);
     fn get(&self, key: &BlockReference) -> Option<Arc<Block>>;
+    fn get_multi<'a>(
+        &self,
+        keys: impl IntoIterator<
+            Item = &'a BlockReference,
+            IntoIter = impl Iterator<Item = &'a BlockReference>,
+        >,
+    ) -> Vec<Option<Arc<Block>>> {
+        keys.into_iter().map(|k| self.get(k)).collect()
+    }
     fn get_own(&self, validator: ValidatorIndex, round: Round) -> Option<Arc<Block>>;
     fn last_known_round(&self, validator: ValidatorIndex) -> Round;
     fn last_known_block(&self, validator: ValidatorIndex) -> Arc<Block>;
