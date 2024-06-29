@@ -35,7 +35,7 @@ impl<B: BlockStore + CommitStore> BlockCache<B> {
 
 impl<B: BlockReader> BlockCache<B> {
     // Helps with synchronization and linearizer
-    const PRESERVE_ROUNDS_AFTER_COMMIT: u64 = 1000;
+    const PRESERVE_ROUNDS_AFTER_COMMIT: u64 = 10;
 
     pub fn update_watermark(&self, new_low_watermark_included: Round) {
         self.cache

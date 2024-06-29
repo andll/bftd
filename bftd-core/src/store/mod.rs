@@ -137,7 +137,7 @@ pub trait BlockStore: BlockReader + Send + Sync + 'static {
     fn flush(&self);
 
     /// Informs store that **some** leader at round was committed; it can be used to optimize caching
-    fn round_committed(&self, _round: Round) {}
+    fn round_committed(&self, round: Round);
 }
 
 pub trait BlockReader: Sync + 'static {
@@ -197,6 +197,7 @@ impl BlockStore for MemoryBlockStore {
     }
 
     fn flush(&self) {}
+    fn round_committed(&self, _round: Round) {}
 }
 impl BlockReader for MemoryBlockStore {
     fn get(&self, key: &BlockReference) -> Option<Arc<Block>> {
@@ -274,6 +275,10 @@ impl<T: BlockStore> BlockStore for Arc<T> {
 
     fn flush(&self) {
         self.deref().flush()
+    }
+
+    fn round_committed(&self, round: Round) {
+        self.deref().round_committed(round)
     }
 }
 

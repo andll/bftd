@@ -57,6 +57,8 @@ impl BlockStore for SledStore {
         // trees share pagecache so single flush should be enough for blocks and index
         self.blocks.flush().expect("Flush failed");
     }
+
+    fn round_committed(&self, _round: Round) {}
 }
 
 impl BlockReader for SledStore {

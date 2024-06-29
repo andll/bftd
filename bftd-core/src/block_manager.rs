@@ -189,6 +189,7 @@ mod tests {
         }
 
         fn flush(&self) {}
+        fn round_committed(&self, _round: Round) {}
     }
 
     impl BlockReader for Mutex<HashMap<BlockReference, Arc<Block>>> {

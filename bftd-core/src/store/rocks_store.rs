@@ -74,6 +74,8 @@ impl BlockStore for RocksStore {
     fn flush(&self) {
         // self.db.flush().expect("Flush failed");
     }
+
+    fn round_committed(&self, _round: Round) {}
 }
 impl BlockReader for RocksStore {
     fn get(&self, key: &BlockReference) -> Option<Arc<Block>> {
