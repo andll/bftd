@@ -130,10 +130,11 @@ impl Syncer {
     ) -> Self {
         let committee = core.committee().clone();
         let metrics = core.metrics().clone();
-        let committer = UniversalCommitterBuilder::new(committee.clone(), block_store.clone())
-            .with_pipeline(true)
-            .with_number_of_leaders(1)
-            .build();
+        let committer =
+            UniversalCommitterBuilder::new(committee.clone(), block_store.clone(), metrics.clone())
+                .with_pipeline(true)
+                .with_number_of_leaders(1)
+                .build();
         let validator_index = core.validator_index();
         let last_proposed_round = core.last_proposed_round();
         let (last_proposed_round_sender, last_proposed_round_receiver) =

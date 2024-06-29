@@ -10,6 +10,8 @@ pub struct Metrics {
     pub blocks_loaded: IntGauge,
     pub blocks_loaded_bytes: IntGauge,
 
+    pub commit_rule_utilization: Histogram,
+
     pub core_last_proposed_round: IntGauge,
     pub core_last_proposed_block_size: IntGauge,
 
@@ -76,6 +78,12 @@ impl Metrics {
 
             blocks_loaded: gauge!("blocks_loaded", registry),
             blocks_loaded_bytes: gauge!("blocks_loaded_bytes", registry),
+
+            commit_rule_utilization: histogram!(
+                "commit_rule_utilization",
+                exponential_buckets(0.001, 2., 10),
+                registry
+            ),
 
             core_last_proposed_round: gauge!("core_last_proposed_round", registry),
             core_last_proposed_block_size: gauge!("core_last_proposed_block_size", registry),

@@ -4,6 +4,7 @@
 use crate::block::{AuthorRound, Round, ValidatorIndex};
 use crate::committee::Committee;
 use crate::consensus::base_committer::BaseCommitterOptions;
+use crate::metrics::Metrics;
 use crate::store::BlockStore;
 use std::{collections::VecDeque, sync::Arc};
 
@@ -14,7 +15,7 @@ use super::{base_committer::BaseCommitter, CommitDecision, LeaderStatus, DEFAULT
 /// multi-leaders, backup leaders, and pipelines.
 pub struct UniversalCommitter<B> {
     committers: Vec<BaseCommitter<B>>,
-    // metrics: Arc<Metrics>,
+    metrics: Arc<Metrics>,
 }
 
 impl<B: BlockStore> UniversalCommitter<B> {
@@ -26,6 +27,7 @@ impl<B: BlockStore> UniversalCommitter<B> {
         last_decided: AuthorRound,
         highest_known_round: Round,
     ) -> Vec<CommitDecision> {
+        let _timer = self.metrics.commit_rule_utilization.start_timer();
         // Try to decide as many leaders as possible, starting with the highest round.
         let mut leaders = VecDeque::new();
         // try to commit a leader up to the highest_known_round - 2. There is no reason to try and
@@ -97,18 +99,18 @@ impl<B: BlockStore> UniversalCommitter<B> {
 pub struct UniversalCommitterBuilder<B> {
     committee: Arc<Committee>,
     block_store: B,
-    // metrics: Arc<Metrics>,
+    metrics: Arc<Metrics>,
     wave_length: u64,
     number_of_leaders: u64,
     pipeline: bool,
 }
 
 impl<B: BlockStore + Clone> UniversalCommitterBuilder<B> {
-    pub fn new(committee: Arc<Committee>, block_store: B) -> Self {
+    pub fn new(committee: Arc<Committee>, block_store: B, metrics: Arc<Metrics>) -> Self {
         Self {
             committee,
             block_store,
-            // metrics,
+            metrics,
             wave_length: DEFAULT_WAVE_LENGTH,
             number_of_leaders: 1,
             pipeline: false,
@@ -150,7 +152,7 @@ impl<B: BlockStore + Clone> UniversalCommitterBuilder<B> {
 
         UniversalCommitter {
             committers,
-            // metrics: self.metrics,
+            metrics: self.metrics,
         }
     }
 }
