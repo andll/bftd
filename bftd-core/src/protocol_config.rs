@@ -7,7 +7,12 @@ pub struct ProtocolConfig {
     pub(crate) leader_timeout: Duration,
     /// How much time to wait before proposing on round if all uncommitted blocks are empty.
     /// Limits the number of empty blocks generated under the low load.
+    ///
     /// It can be zero if we want to produce blocks as fast as possible.
+    ///
+    /// This parameter only makes sense if ProposalMaker::proposal_waiter is implemented for the proposer.
+    ///
+    /// This timeout plays no role if ProposalMaker::proposal_waiter always returns None.
     pub(crate) empty_commit_timeout: Duration,
 }
 

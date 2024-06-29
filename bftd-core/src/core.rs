@@ -34,7 +34,9 @@ pub trait ProposalMaker: Send + 'static {
     fn make_proposal(&mut self) -> Bytes;
 
     /// If a proposal currently is not ready, this can return an optional future
-    /// that resolves when the proposal is ready
+    /// that resolves when the proposal is ready.
+    ///
+    /// If None is returned proposal is created without waiting for non-empty payload.
     fn proposal_waiter<'a>(&'a mut self) -> Option<Pin<Box<dyn Future<Output = ()> + 'a + Send>>> {
         None
     }
