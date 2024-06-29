@@ -16,10 +16,12 @@ use crate::store::BlockStore;
 use crate::store::{CommitInterpreter, CommitStore};
 use anyhow::bail;
 use bytes::Bytes;
+use futures::future::OptionFuture;
 use futures::FutureExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::future::Future;
+use std::marker::PhantomData;
 use std::ops::Add;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -46,7 +48,6 @@ struct SyncerTask<S, B, C, P> {
     fetcher: BlockFetcher,
     last_proposed_round_sender: watch::Sender<Round>,
     blocks_receiver: mpsc::Receiver<(Arc<Block>, BlockSource)>,
-    proposer: P,
     last_decided: AuthorRound,
     last_commit: Option<Commit>,
     stop: oneshot::Receiver<()>,
@@ -57,6 +58,7 @@ struct SyncerTask<S, B, C, P> {
     block_manager: BlockManager<B>,
     uncommitted_counter: UncommittedCounter,
     protocol_config: ProtocolConfig,
+    _proposer: PhantomData<P>,
 }
 
 struct SyncerInner<B, F, C> {
@@ -195,7 +197,6 @@ impl Syncer {
             fetcher,
             last_proposed_round_sender,
             blocks_receiver,
-            proposer,
             last_decided,
             last_commit,
             stop: stop_receiver,
@@ -206,8 +207,9 @@ impl Syncer {
             uncommitted_counter: UncommittedCounter::new(metrics.clone()),
             metrics,
             protocol_config,
+            _proposer: PhantomData,
         };
-        let handle = tokio::spawn(syncer.run());
+        let handle = tokio::spawn(syncer.run(proposer));
         Syncer {
             handle,
             stop: stop_sender,
@@ -233,8 +235,8 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
 {
     const STALL_TIMEOUT: Duration = Duration::from_secs(15);
 
-    pub async fn run(mut self) {
-        self.try_make_proposal();
+    pub async fn run(mut self, mut proposer: P) {
+        self.try_make_proposal(&mut proposer);
         let (mut committed, mut skipped) = (0usize, 0usize);
         let mut proposal_deadline = ProposalDeadline::new();
         let mut stall_deadline = Instant::now() + Self::STALL_TIMEOUT;
@@ -293,13 +295,17 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                             }
                         });
                         if wait_leaders.is_empty() {
-                            self.try_make_proposal();
-                            proposal_deadline.reset();
-                        } else {
-                            if !proposal_deadline.is_set() {
+                            if !self.protocol_config.empty_commit_timeout_set() || self.uncommitted_counter.has_uncommitted_non_empty() {
+                                self.try_make_proposal(&mut proposer);
+                                proposal_deadline.reset();
+                            } else if !proposal_deadline.is_set_for_payload() {
+                                // todo set deadline based on round start time?
                                 let deadline = Instant::now().add(self.protocol_config.leader_timeout);
-                                proposal_deadline.set_leaders_deadline(deadline, wait_leaders);
+                                proposal_deadline.set_payload_deadline(deadline)
                             }
+                        } else if !proposal_deadline.is_set() {
+                            let deadline = Instant::now().add(self.protocol_config.leader_timeout);
+                            proposal_deadline.set_leaders_deadline(deadline, wait_leaders);
                         }
                     }
                     let commits = self.committer.try_commit(self.last_decided, self.last_known_round);
@@ -319,14 +325,22 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                         log::info!("stat: committed {}, skipped {}", committed, skipped);
                     }
                 }
+                _ = OptionFuture::from(proposer.proposal_waiter()), if proposal_deadline.is_set_for_payload() => {
+                    let _timer = self.metrics.syncer_main_loop_util_ns.utilization_timer();
+                    self.metrics.syncer_main_loop_calls.inc();
+                    self.try_make_proposal(&mut proposer);
+                    proposal_deadline.reset();
+                }
                 _ = proposal_deadline.future() => {
                     let _timer = self.metrics.syncer_main_loop_util_ns.utilization_timer();
                     self.metrics.syncer_main_loop_calls.inc();
                     let waiting_round = self.core.vector_clock_round().unwrap_or_default().previous();
-                    let timeouts: Vec<_> = proposal_deadline.waiting_validators.as_ref().unwrap().iter().map(|l|AuthorRound::new(*l, waiting_round)).collect();
-                    self.metrics.syncer_leader_timeouts.inc();
-                    tracing::warn!("Leader timeout {timeouts:?}");
-                    self.try_make_proposal();
+                    if !proposal_deadline.is_set_for_payload() {
+                        let timeouts: Vec<_> = proposal_deadline.waiting_validators.as_ref().unwrap().iter().map(|l|AuthorRound::new(*l, waiting_round)).collect();
+                        self.metrics.syncer_leader_timeouts.inc();
+                        tracing::warn!("Leader timeout {timeouts:?}");
+                    }
+                    self.try_make_proposal(&mut proposer);
                     proposal_deadline.reset();
                 }
                 _ = tokio::time::sleep_until(stall_deadline) => {
@@ -402,7 +416,7 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
         self.last_commit = Some(commit);
     }
 
-    fn try_make_proposal(&mut self) {
+    fn try_make_proposal(&mut self, proposer: &mut P) {
         let round = self.core.vector_clock_round();
         let Some(round) = round else {
             return;
@@ -413,16 +427,16 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                 .committer
                 .is_leader(previous, self.core.validator_index())
             {
-                self.make_proposal_for_round(previous);
+                self.make_proposal_for_round(previous, proposer);
             }
         }
-        self.make_proposal_for_round(round);
+        self.make_proposal_for_round(round, proposer);
     }
 
-    fn make_proposal_for_round(&mut self, round: Round) {
+    fn make_proposal_for_round(&mut self, round: Round, proposer: &mut P) {
         let proposal = self
             .core
-            .make_proposal(&mut self.proposer, round, self.clock.time_ns());
+            .make_proposal(proposer, round, self.clock.time_ns());
         tracing::debug!("Generated proposal {}", proposal);
         self.last_proposed_round_sender
             .send(proposal.reference().round)
@@ -748,7 +762,9 @@ impl UncommittedCounter {
 
 struct ProposalDeadline {
     future: Pin<Box<dyn Future<Output = ()> + Send + 'static>>,
-    is_set: bool,
+    // None means deadline is not set
+    // Some(none-empty-vec) means deadline is set for leaders
+    // Some(empty-vec) means deadline is set for payload
     waiting_validators: Option<Vec<ValidatorIndex>>,
 }
 
@@ -756,20 +772,22 @@ impl ProposalDeadline {
     pub fn new() -> Self {
         Self {
             future: futures::future::pending().boxed(),
-            is_set: false,
             waiting_validators: None,
         }
     }
     pub fn set_leaders_deadline(&mut self, deadline: Instant, waiting: Vec<ValidatorIndex>) {
         self.future = tokio::time::sleep_until(deadline).boxed();
         self.waiting_validators = Some(waiting);
-        self.is_set = true;
+    }
+
+    pub fn set_payload_deadline(&mut self, deadline: Instant) {
+        self.future = tokio::time::sleep_until(deadline).boxed();
+        self.waiting_validators = Some(vec![]);
     }
 
     pub fn reset(&mut self) {
         self.future = futures::future::pending().boxed();
         self.waiting_validators = None;
-        self.is_set = false;
     }
 
     // Should be combined with future_set() check
@@ -778,7 +796,15 @@ impl ProposalDeadline {
     }
 
     pub fn is_set(&self) -> bool {
-        self.is_set
+        self.waiting_validators.is_some()
+    }
+
+    pub fn is_set_for_payload(&self) -> bool {
+        if let Some(w) = &self.waiting_validators {
+            w.is_empty()
+        } else {
+            false
+        }
     }
 }
 

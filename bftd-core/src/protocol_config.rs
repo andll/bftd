@@ -20,6 +20,12 @@ impl Default for ProtocolConfig {
     }
 }
 
+impl ProtocolConfig {
+    pub fn empty_commit_timeout_set(&self) -> bool {
+        self.empty_commit_timeout != Duration::ZERO
+    }
+}
+
 #[derive(Default)]
 pub struct ProtocolConfigBuilder(ProtocolConfig);
 

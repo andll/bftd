@@ -6,6 +6,8 @@ use crate::store::BlockStore;
 use crate::threshold_clock::ThresholdClockAggregator;
 use bytes::Bytes;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 pub struct Core<S, B> {
@@ -30,6 +32,12 @@ pub trait ProposalMaker: Send + 'static {
     /// Returned payload size should be less or equal to MAX_BLOCK_PAYLOAD.
     /// Returned payload should pass verification by the corresponding BlockFilter.
     fn make_proposal(&mut self) -> Bytes;
+
+    /// If a proposal currently is not ready, this can return an optional future
+    /// that resolves when the proposal is ready
+    fn proposal_waiter<'a>(&'a mut self) -> Option<Pin<Box<dyn Future<Output = ()> + 'a + Send>>> {
+        None
+    }
 }
 
 impl<S: Signer, B: BlockStore> Core<S, B> {

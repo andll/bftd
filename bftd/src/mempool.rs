@@ -3,6 +3,9 @@ use bftd_core::block::{Block, MAX_BLOCK_PAYLOAD};
 use bftd_core::core::ProposalMaker;
 use bftd_core::syncer::BlockFilter;
 use bytes::{BufMut, Bytes, BytesMut};
+use futures::FutureExt;
+use std::future::Future;
+use std::pin::Pin;
 use tokio::sync::mpsc;
 
 pub struct BasicMempool {
@@ -61,6 +64,23 @@ impl ProposalMaker for BasicMempool {
             }
         }
         payload_builder.into_payload()
+    }
+
+    fn proposal_waiter<'a>(&'a mut self) -> Option<Pin<Box<dyn Future<Output = ()> + 'a + Send>>> {
+        if self.last_transaction.is_some() {
+            // at least one transaction is ready for the proposal
+            return None;
+        }
+        Some(self.receive_one().boxed())
+    }
+}
+
+impl BasicMempool {
+    async fn receive_one(&mut self) {
+        assert!(self.last_transaction.is_none());
+        if let Some(transaction) = self.receiver.recv().await {
+            self.last_transaction = Some(transaction);
+        }
     }
 }
 
