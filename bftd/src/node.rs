@@ -121,6 +121,7 @@ impl Node {
             clock,
             proposer,
             TransactionsPayloadBlockFilter,
+            self.genesis.protocol_config().clone(),
         );
 
         let syncer = Arc::new(syncer);

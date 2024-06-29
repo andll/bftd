@@ -6,6 +6,7 @@ use bftd_core::committee::{Stake, ValidatorInfo};
 use bftd_core::crypto::{blake2_hash, generate_validator_key_pair, Ed25519Signer};
 use bftd_core::genesis::Genesis;
 use bftd_core::network::{generate_network_keypair, NoisePrivateKey};
+use bftd_core::protocol_config::ProtocolConfig;
 use handlebars::Handlebars;
 use rand::rngs::ThreadRng;
 use serde::Serialize;
@@ -28,6 +29,7 @@ impl TestCluster {
         bind: Option<String>,
         prometheus_bind: Option<SocketAddr>,
         http_server_bind: Option<SocketAddr>,
+        protocol_config: ProtocolConfig,
     ) -> Self {
         let mut rng = ThreadRng::default();
         let (protocol_private_keys, protocol_public_keys): (Vec<_>, Vec<_>) = peer_addresses
@@ -63,7 +65,7 @@ impl TestCluster {
                 },
             )
             .collect();
-        let genesis = Genesis::new(generation, validator_info);
+        let genesis = Genesis::new(generation, validator_info, protocol_config);
         Self {
             genesis,
             protocol_private_keys,

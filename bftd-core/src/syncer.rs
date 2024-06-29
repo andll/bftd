@@ -8,6 +8,7 @@ use crate::fetcher::BlockFetcher;
 use crate::log_byzantine;
 use crate::metrics::{Metrics, UtilizationTimerExt};
 use crate::network::ConnectionPool;
+use crate::protocol_config::ProtocolConfig;
 use crate::rpc::{
     NetworkRequest, NetworkResponse, NetworkRpc, NetworkRpcRouter, PeerRpcTaskCommand, RpcResult,
 };
@@ -55,6 +56,7 @@ struct SyncerTask<S, B, C, P> {
     last_known_round: Round,
     block_manager: BlockManager<B>,
     uncommitted_counter: UncommittedCounter,
+    protocol_config: ProtocolConfig,
 }
 
 struct SyncerInner<B, F, C> {
@@ -122,6 +124,7 @@ impl Syncer {
         clock: C,
         proposer: P,
         block_filter: F,
+        protocol_config: ProtocolConfig,
     ) -> Self {
         let committee = core.committee().clone();
         let metrics = core.metrics().clone();
@@ -202,6 +205,7 @@ impl Syncer {
             block_manager,
             uncommitted_counter: UncommittedCounter::new(metrics.clone()),
             metrics,
+            protocol_config,
         };
         let handle = tokio::spawn(syncer.run());
         Syncer {
@@ -296,7 +300,7 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
                             waiting_leaders = None;
                         } else {
                             if !proposal_deadline_set {
-                                proposal_deadline = tokio::time::sleep_until(Instant::now().add(Duration::from_secs(1))).boxed();
+                                proposal_deadline = tokio::time::sleep_until(Instant::now().add(self.protocol_config.leader_timeout)).boxed();
                                 proposal_deadline_set = true;
                                 waiting_leaders = Some(leaders);
                             }
@@ -757,8 +761,8 @@ mod test {
     fn uncommitted_counter_test() {
         let mut uc = UncommittedCounter::new(Metrics::new_test());
         let b1 = blk_p(0, 0, vec![], &[1]);
-        let b2 = blk_p(0, 0, vec![], &[]);
-        let b3 = blk_p(0, 0, vec![], &[2]);
+        let b2 = blk_p(1, 0, vec![], &[]);
+        let b3 = blk_p(2, 0, vec![], &[2]);
         uc.add(&[b2.clone(), b3.clone()]);
         assert_eq!(uc.uncommitted_non_empty_blocks.len(), 1);
         uc.committed(&[b1]); // non empty but was not reported previously

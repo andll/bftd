@@ -11,6 +11,7 @@ mod test_cluster;
 use crate::node::NodeHandle;
 use crate::test_cluster::{start_node, TestCluster};
 use anyhow::bail;
+use bftd_core::protocol_config::ProtocolConfigBuilder;
 use clap::Parser;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::path::PathBuf;
@@ -105,12 +106,15 @@ fn handle_new_chain(args: NewChainArgs) -> anyhow::Result<()> {
             process::exit(1);
         }
     }
+    let mut protocol_config = ProtocolConfigBuilder::default();
+    protocol_config.with_recommended_empty_commit_timeout();
     let test_cluster = TestCluster::generate(
         &args.name,
         args.peer_addresses,
         args.bind,
         args.prometheus_bind,
         args.http_server_bind,
+        protocol_config.build(),
     );
     println!("Storing test cluster into {path:?}");
     test_cluster.store_into(&path, args.prometheus_template)?;

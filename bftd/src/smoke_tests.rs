@@ -1,6 +1,7 @@
 use crate::node::NodeHandle;
 use crate::test_cluster::TestCluster;
 use bftd_core::consensus::Commit;
+use bftd_core::protocol_config::ProtocolConfig;
 use bftd_core::store::CommitStore;
 use futures::future::join_all;
 use std::collections::HashSet;
@@ -114,7 +115,7 @@ fn start_smoke_test_cluster(dir: PathBuf, num_peers: usize, base_port: usize) ->
     let peers = (0..num_peers)
         .map(|p| format!("127.0.0.1:{}", base_port + p))
         .collect();
-    let cluster = TestCluster::generate("test", peers, None, None, None);
+    let cluster = TestCluster::generate("test", peers, None, None, None, ProtocolConfig::default());
     cluster.store_into(&dir, None).unwrap();
     TestCluster::start_test_cluster(dir).unwrap()
 }
@@ -128,7 +129,7 @@ fn start_smoke_test_cluster_partially(
     let peers = (0..num_peers)
         .map(|p| format!("127.0.0.1:{}", base_port + p))
         .collect();
-    let cluster = TestCluster::generate("test", peers, None, None, None);
+    let cluster = TestCluster::generate("test", peers, None, None, None, ProtocolConfig::default());
     cluster.store_into(&dir, None).unwrap();
     let to_start = (0..start_up_to).collect();
     TestCluster::start_test_cluster_partially(dir, Some(to_start)).unwrap()

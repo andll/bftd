@@ -23,6 +23,7 @@ pub mod genesis;
 mod log;
 pub mod metrics;
 pub mod network;
+pub mod protocol_config;
 pub mod rpc;
 pub mod store;
 pub mod syncer;
