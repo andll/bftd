@@ -60,6 +60,10 @@ struct NewChainArgs {
         help = "Path to template file for prometheus configuration. If not set prometheus configuration won't be generated."
     )]
     prometheus_template: Option<PathBuf>,
+    #[arg(long, short = 'l', help = "Leader timeout")]
+    leader_timeout_ms: Option<u64>,
+    #[arg(long, short = 'e', num_args = 0..=1, default_missing_value = Some(""), help ="Empty commit timeout allows to slow down empty blocks generation if there is nothing to propose or commit. Specify this argument without value to generate empty commit timeout automatically based on leader timeout. If argument is not specified empty commit timeout feature is not used and blocks are generated as fast as possible.")]
+    empty_commit_timeout_ms: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -127,7 +131,23 @@ fn handle_new_chain(args: NewChainArgs) -> anyhow::Result<()> {
         }
     }
     let mut protocol_config = ProtocolConfigBuilder::default();
-    protocol_config.with_recommended_empty_commit_timeout();
+    if let Some(leader_timeout_ms) = args.leader_timeout_ms {
+        protocol_config.with_leader_timeout(Duration::from_millis(leader_timeout_ms));
+        println!("Using commit timeout {leader_timeout_ms} ms")
+    }
+    if let Some(empty_commit_timeout_ms) = args.empty_commit_timeout_ms {
+        if empty_commit_timeout_ms.is_empty() {
+            protocol_config.with_recommended_empty_commit_timeout();
+        } else {
+            let empty_commit_timeout_ms = empty_commit_timeout_ms.parse().unwrap();
+            protocol_config
+                .with_empty_commit_timeout(Duration::from_millis(empty_commit_timeout_ms));
+        }
+        println!(
+            "Using empty commit timeout {} ms",
+            protocol_config.empty_commit_timeout().as_millis()
+        );
+    }
     let test_cluster = TestCluster::generate(
         &args.name,
         args.peer_addresses,

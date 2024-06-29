@@ -59,7 +59,7 @@ impl ProtocolConfigBuilder {
             panic!("leader_timeout should be larger then empty_commit_timeout");
         }
         if self.0.leader_timeout < self.0.empty_commit_timeout * 2 {
-            tracing::warn!("Protocol might not work well if leader_timeout({:?}) is less double of empty_commit_timeout({:?})", self.0.leader_timeout, self.0.empty_commit_timeout);
+            tracing::error!("Protocol might not work well if leader_timeout({:?}) is less double of empty_commit_timeout({:?})", self.0.leader_timeout, self.0.empty_commit_timeout);
         }
         self.0
     }
