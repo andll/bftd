@@ -8,11 +8,36 @@ use std::fmt;
 use std::ops::Add;
 use std::sync::Arc;
 
+/*
+   Block verification:
+   * Basic structure - Block::from_bytes:
+     * reference.hash matches block content
+     * parents are specified as a correct vector
+     * signature matches block content
+   * Correctness against current the current committee - Committee::verify_block:
+     * reference.author specified in the block exists in committee
+     * signature on the block belongs to reference.author
+     * block reference matches source of the block:
+       * for subscription, reference.author matches subscribed validator
+       * for response for get_block RPC - reference matches requested reference
+     * time_ns upper bound - time_ns is not in the future comparing to current time
+     * chain_id of a block matches chain_id of the committee
+   * Block stored locally has all parents - BlockManager
+   * Block payload matches application-specific format - BlockFilter
+   * TODO:
+     * parents vector clock
+     * time_ns lower bound
+*/
 pub struct Block {
+    /// Reference of the current block
     reference: BlockReference,
+    /// Signature over block data
     signature: BlockSignature,
+    /// Id of the chain
     chain_id: ChainId,
+    /// Timestamp when block was created. Number of nanoseconds form unix epoch.
     time_ns: u64, // todo verify
+    /// References to parent blocks
     parents: Vec<BlockReference>,
     payload_offset: usize,
     data: Bytes,
@@ -21,8 +46,11 @@ pub struct Block {
 
 #[derive(Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize)]
 pub struct BlockReference {
+    /// Round of the block
     pub round: Round,
+    /// Author of the block
     pub author: ValidatorIndex,
+    /// Hash of the block
     pub hash: BlockHash,
 }
 
