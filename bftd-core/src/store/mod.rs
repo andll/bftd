@@ -190,7 +190,9 @@ pub trait BlockReader: Sync + 'static {
 
 impl BlockStore for MemoryBlockStore {
     fn put(&self, block: Arc<Block>) {
-        self.write()
+        self.inner
+            .write()
+            .blocks
             .entry(block.round())
             .or_default()
             .insert((block.author(), *block.block_hash()), block);
@@ -201,7 +203,9 @@ impl BlockStore for MemoryBlockStore {
 }
 impl BlockReader for MemoryBlockStore {
     fn get(&self, key: &BlockReference) -> Option<Arc<Block>> {
-        self.read()
+        self.inner
+            .read()
+            .blocks
             .get(&key.round)?
             .get(&(key.author, key.hash))
             .cloned()
@@ -209,7 +213,9 @@ impl BlockReader for MemoryBlockStore {
 
     fn get_own(&self, validator: ValidatorIndex, round: Round) -> Option<Arc<Block>> {
         Some(
-            self.read()
+            self.inner
+                .read()
+                .blocks
                 .get(&round)?
                 .range((validator, BlockHash::MIN)..(validator, BlockHash::MAX))
                 .next()?
@@ -224,8 +230,8 @@ impl BlockReader for MemoryBlockStore {
 
     fn last_known_block(&self, validator: ValidatorIndex) -> Arc<Block> {
         // todo performance
-        let lock = self.read();
-        for (_round, map) in lock.iter().rev() {
+        let lock = self.inner.read();
+        for (_round, map) in lock.blocks.iter().rev() {
             if let Some((_, block)) = map
                 .range((validator, BlockHash::MIN)..(validator, BlockHash::MAX))
                 .next()
@@ -237,8 +243,8 @@ impl BlockReader for MemoryBlockStore {
     }
 
     fn exists(&self, key: &BlockReference) -> bool {
-        let lock = self.read();
-        let m = lock.get(&key.round);
+        let lock = self.inner.read();
+        let m = lock.blocks.get(&key.round);
         match m {
             Some(map) => map.contains_key(&(key.author, key.hash)),
             None => false,
@@ -246,8 +252,8 @@ impl BlockReader for MemoryBlockStore {
     }
 
     fn get_blocks_by_round(&self, round: Round) -> Vec<Arc<Block>> {
-        let lock = self.read();
-        if let Some(map) = lock.get(&round) {
+        let lock = self.inner.read();
+        if let Some(map) = lock.blocks.get(&round) {
             // todo - is cloning a good idea here?
             map.values().cloned().collect()
         } else {
@@ -256,8 +262,8 @@ impl BlockReader for MemoryBlockStore {
     }
 
     fn get_blocks_at_author_round(&self, author: ValidatorIndex, round: Round) -> Vec<Arc<Block>> {
-        let lock = self.read();
-        if let Some(map) = lock.get(&round) {
+        let lock = self.inner.read();
+        if let Some(map) = lock.blocks.get(&round) {
             // todo - is cloning a good idea here?
             map.range((author, BlockHash::MIN)..(author, BlockHash::MAX))
                 .map(|(_, b)| b.clone())
@@ -316,5 +322,12 @@ impl<T: BlockReader + Send> BlockReader for Arc<T> {
     }
 }
 
-pub type MemoryBlockStore =
-    parking_lot::RwLock<BTreeMap<Round, BTreeMap<(ValidatorIndex, BlockHash), Arc<Block>>>>;
+#[derive(Default)]
+pub struct MemoryBlockStore {
+    inner: parking_lot::RwLock<MemoryBlockStoreInner>,
+}
+
+#[derive(Default)]
+pub struct MemoryBlockStoreInner {
+    blocks: BTreeMap<Round, BTreeMap<(ValidatorIndex, BlockHash), Arc<Block>>>,
+}
