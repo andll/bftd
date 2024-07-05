@@ -171,8 +171,8 @@ impl BlockReader for BlockCacheInner {
     fn get_own(&self, validator: ValidatorIndex, round: Round) -> Option<Arc<Block>> {
         let round_cache = self.cache.get(&round)?;
         let mut range = round_cache.range(
-            BlockReference::first_block_reference_for_round_author(round, validator)
-                ..=BlockReference::last_block_reference_for_round_author(round, validator),
+            BlockReference::first_for_round_author(round, validator)
+                ..=BlockReference::last_for_round_author(round, validator),
         );
         return range.next().map(|(_, v)| v.clone());
     }
@@ -204,8 +204,8 @@ impl BlockReader for BlockCacheInner {
             return vec![];
         };
         let range = round_cache.range(
-            BlockReference::first_block_reference_for_round_author(round, author)
-                ..=BlockReference::last_block_reference_for_round_author(round, author),
+            BlockReference::first_for_round_author(round, author)
+                ..=BlockReference::last_for_round_author(round, author),
         );
         return range.map(|(_, b)| b.clone()).collect();
     }

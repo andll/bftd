@@ -88,10 +88,10 @@ impl BlockReader for RocksStore {
     }
 
     fn get_own(&self, validator: ValidatorIndex, round: Round) -> Option<Arc<Block>> {
-        let from = BlockReference::first_block_reference_for_round_author(round, validator)
-            .round_author_hash_encoding();
-        let to = BlockReference::last_block_reference_for_round_author(round, validator)
-            .round_author_hash_encoding();
+        let from =
+            BlockReference::first_for_round_author(round, validator).round_author_hash_encoding();
+        let to =
+            BlockReference::last_for_round_author(round, validator).round_author_hash_encoding();
 
         let iter = self
             .db
@@ -106,9 +106,9 @@ impl BlockReader for RocksStore {
     }
 
     fn last_known_block(&self, validator: ValidatorIndex) -> Arc<Block> {
-        let from = BlockReference::first_block_reference_for_round_author(Round::ZERO, validator)
+        let from = BlockReference::first_for_round_author(Round::ZERO, validator)
             .author_round_hash_encoding();
-        let to = BlockReference::first_block_reference_for_round_author(Round::MAX, validator)
+        let to = BlockReference::first_for_round_author(Round::MAX, validator)
             .author_round_hash_encoding();
 
         let iter = self
@@ -134,10 +134,8 @@ impl BlockReader for RocksStore {
     }
 
     fn get_blocks_by_round(&self, round: Round) -> Vec<Arc<Block>> {
-        let from =
-            BlockReference::first_block_reference_for_round(round).round_author_hash_encoding();
-        let to = BlockReference::first_block_reference_for_round(round.next())
-            .round_author_hash_encoding();
+        let from = BlockReference::first_for_round(round).round_author_hash_encoding();
+        let to = BlockReference::first_for_round(round.next()).round_author_hash_encoding();
         let iter = self
             .db
             .iterator_cf(self.blocks(), IteratorMode::From(&from, Direction::Forward));
@@ -147,10 +145,9 @@ impl BlockReader for RocksStore {
     }
 
     fn get_blocks_at_author_round(&self, author: ValidatorIndex, round: Round) -> Vec<Arc<Block>> {
-        let from = BlockReference::first_block_reference_for_round_author(round, author)
-            .round_author_hash_encoding();
-        let to = BlockReference::last_block_reference_for_round_author(round, author)
-            .round_author_hash_encoding();
+        let from =
+            BlockReference::first_for_round_author(round, author).round_author_hash_encoding();
+        let to = BlockReference::last_for_round_author(round, author).round_author_hash_encoding();
         let iter = self
             .db
             .iterator_cf(self.blocks(), IteratorMode::From(&from, Direction::Forward));

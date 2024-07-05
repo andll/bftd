@@ -217,9 +217,7 @@ impl ParentsAccumulator {
                 .expect("Must have own block parent"),
         );
         for btree in self.parents.iter_mut() {
-            let mut p = btree.split_off(&BlockReference::first_block_reference_for_round(
-                proposal_round,
-            ));
+            let mut p = btree.split_off(&BlockReference::first_for_round(proposal_round));
             // p is a portion of btree >= proposal_round(what we need to keep), swapping it into *btree
             mem::swap(btree, &mut p);
             // now p is a portion of btree < proposal_round, which is where we take parent

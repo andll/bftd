@@ -469,7 +469,7 @@ impl BlockReference {
         self.author
     }
 
-    pub fn first_block_reference_for_round(round: Round) -> Self {
+    pub fn first_for_round(round: Round) -> Self {
         Self {
             round,
             author: ValidatorIndex(0),
@@ -478,18 +478,17 @@ impl BlockReference {
     }
 
     pub fn range_for_round(round: Round) -> Range<BlockReference> {
-        Self::first_block_reference_for_round(round)
-            ..Self::first_block_reference_for_round(round.next())
+        Self::first_for_round(round)..Self::first_for_round(round.next())
     }
 
-    pub fn first_block_reference_for_round_author(round: Round, author: ValidatorIndex) -> Self {
+    pub fn first_for_round_author(round: Round, author: ValidatorIndex) -> Self {
         Self {
             round,
             author,
             hash: BlockHash::MIN,
         }
     }
-    pub fn last_block_reference_for_round_author(round: Round, author: ValidatorIndex) -> Self {
+    pub fn last_for_round_author(round: Round, author: ValidatorIndex) -> Self {
         Self {
             round,
             author,
