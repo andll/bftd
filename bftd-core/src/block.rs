@@ -95,48 +95,69 @@ impl Block {
     const PARENTS_COUNT_OFFSET: usize = Self::TIME_OFFSET + 8;
     const PARENTS_OFFSET: usize = Self::PARENTS_COUNT_OFFSET + 4;
 
+    /// Returns reference of the current block
     pub fn reference(&self) -> &BlockReference {
         &self.reference
     }
 
+    /// Returns block's signature
     pub fn signature(&self) -> &BlockSignature {
         &self.signature
     }
 
+    /// Returns block's payload as slice
     pub fn payload(&self) -> &[u8] {
         &self.data[self.payload_offset..]
     }
 
+    /// Returns block's payload as Bytes
     pub fn payload_bytes(&self) -> Bytes {
         self.data.slice(self.payload_offset..)
     }
 
+    /// Returns complete block data
     pub fn data(&self) -> &Bytes {
         &self.data
     }
 
+    /// Returns block's parents
     pub fn parents(&self) -> &[BlockReference] {
         &self.parents
     }
 
+    /// Returns block's author
     pub fn author(&self) -> ValidatorIndex {
         self.reference.author
     }
 
+    /// Returns block's round
     pub fn round(&self) -> Round {
         self.reference.round
     }
 
+    /// Return block's hash
     pub fn block_hash(&self) -> &BlockHash {
         &self.reference.hash
     }
 
+    /// Return block's author and round
     pub fn author_round(&self) -> AuthorRound {
         self.reference.author_round()
     }
 
+    /// Returns nanosecond timestamp of the block
     pub fn time_ns(&self) -> u64 {
         self.time_ns
+    }
+
+    /// Returns whether block is a genesis block
+    pub fn is_genesis(&self) -> bool {
+        self.reference.is_genesis()
+    }
+
+    /// Returns chain id of the block
+    pub fn chain_id(&self) -> &ChainId {
+        &self.chain_id
     }
 
     /// Returns a 'preceding' block - parent block authored by the same validator as this block.
@@ -146,6 +167,8 @@ impl Block {
         self.parents.get(0)
     }
 
+    /// Extracts block reference from block data without parsing full block.
+    /// Does not check if reference matches the block.
     pub fn reference_from_block_bytes(data: &[u8]) -> anyhow::Result<BlockReference> {
         ensure!(data.len() >= Self::PARENTS_OFFSET, "Block too small");
         let hash = BlockHash(
@@ -170,10 +193,7 @@ impl Block {
         })
     }
 
-    pub fn chain_id(&self) -> &ChainId {
-        &self.chain_id
-    }
-
+    /// Creates new block and signs it with the signer.
     pub fn new(
         round: Round,
         author: ValidatorIndex,
@@ -232,6 +252,8 @@ impl Block {
         }
     }
 
+    /// Parses block bytes and perform basic block verification.
+    /// This should be used to parse block received from network.
     pub fn from_bytes(
         data: Bytes,
         hasher: &impl Hasher,
@@ -280,6 +302,8 @@ impl Block {
         Ok(self)
     }
 
+    /// Parses block without performing expensive verification.
+    /// This should be used to parse block read from disk.
     pub fn from_bytes_unchecked(
         data: Bytes,
         metrics: Option<Arc<Metrics>>,
@@ -364,6 +388,7 @@ impl Block {
         }
     }
 
+    /// Generate genesis block for given a chain id and author.
     pub fn genesis(chain_id: ChainId, author: ValidatorIndex) -> Self {
         Self::new(
             Round::ZERO,
