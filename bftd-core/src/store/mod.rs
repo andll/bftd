@@ -346,6 +346,17 @@ pub trait DagExt: BlockReader {
                 .expect("Non-genesis block must have preceding block");
         }
     }
+
+    /// Evaluates critical block for the given block
+    fn critical_block(&self, block: &Block) -> Option<BlockReference> {
+        let preceding = block.preceding()?;
+        if preceding.round() == block.round().previous() {
+            let preceding = self.get(preceding).expect("Parent block not found");
+            Some(*preceding.preceding()?)
+        } else {
+            Some(*preceding)
+        }
+    }
 }
 
 impl<T: BlockReader> DagExt for T {}
