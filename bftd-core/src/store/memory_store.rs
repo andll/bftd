@@ -188,6 +188,7 @@ impl BlockReader for MemoryBlockStore {
 mod tests {
     use super::*;
     use crate::block::tests::blk;
+    use crate::committee::Stake;
     use crate::{b, br};
 
     macro_rules! parse_br_option (
@@ -255,5 +256,28 @@ mod tests {
             store.get_block_view(&br!("B6")),
             bw!(["A5", "B3", "_", "D0", "E0"])
         );
+    }
+
+    #[test]
+    fn critical_block_test() {
+        let committee = Committee::new_test(vec![1; 3]);
+        let genesis_blocks = committee
+            .enumerate_indexes()
+            .map(|vi| blk(vi.0, 0, vec![]))
+            .collect();
+        let store = MemoryBlockStore::from_genesis_blocks(genesis_blocks);
+
+        let a1 = b!("A1", ["A0", "B0", "C0"]);
+        store.put(a1.clone());
+        assert_eq!(store.critical_block(&a1), None);
+        let a2 = b!("A2", ["A1", "B0", "C0"]);
+        store.put(a2.clone());
+        store.put(b!("B2", ["B0", "A1", "C0"]));
+        assert_eq!(store.critical_block(&a2), Some(br!("A0")));
+        assert_eq!(store.critical_block_links(&a2, &committee), Some(Stake(1)));
+        let a3 = b!("A3", ["A2", "B2", "C0"]);
+        store.put(a3.clone());
+        assert_eq!(store.critical_block(&a3), Some(br!("A1")));
+        assert_eq!(store.critical_block_links(&a3, &committee), Some(Stake(2)));
     }
 }

@@ -1,4 +1,5 @@
 use crate::block::{Block, BlockReference, Round, ValidatorIndex};
+use crate::committee::{Committee, Stake};
 use crate::consensus::Commit;
 use std::collections::HashSet;
 use std::ops::Deref;
@@ -268,7 +269,7 @@ impl<T: BlockReader + Send> BlockReader for Arc<T> {
 
 
 */
-pub trait DagExt: BlockReader {
+pub trait DagExt: BlockReader + BlockViewStore {
     fn merge_block_ref_into(
         &self,
         left: &mut Vec<Option<BlockReference>>,
@@ -357,6 +358,30 @@ pub trait DagExt: BlockReader {
             Some(*preceding)
         }
     }
+
+    /// Evaluates total stoke that links from given block to its critical block.
+    /// Returns None if block does not have a critical block (block is among very early blocks in epoch).
+    ///
+    /// Provided block does not need to be inserted in block store,
+    /// but all its parents should already be in the block store.
+    fn critical_block_links(&self, block: &Block, committee: &Committee) -> Option<Stake> {
+        let critical_block = self.critical_block(block)?;
+        let author = block.author();
+        let mut stake = Stake::ZERO;
+        for parent in block.parents() {
+            if parent.is_genesis() {
+                continue;
+            }
+            let parent_view = self.get_block_view(parent);
+            if let Some(view) = author.slice_get(&parent_view) {
+                // todo - also check critical block is a mainline block?
+                if view.round() >= critical_block.round() {
+                    stake += committee.get_stake(parent.author);
+                }
+            }
+        }
+        Some(stake)
+    }
 }
 
-impl<T: BlockReader> DagExt for T {}
+impl<T: BlockReader + BlockViewStore> DagExt for T {}
