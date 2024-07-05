@@ -125,6 +125,11 @@ impl Committee {
             .map(|(i, _)| ValidatorIndex(i as u64))
     }
 
+    /// Returns vec![T::default(); committee::len()]
+    pub fn committee_vec_default<T: Default>(&self) -> Vec<T> {
+        self.validators.iter().map(|_| Default::default()).collect()
+    }
+
     pub fn all_indexes_shuffled_excluding(&self, exclude: ValidatorIndex) -> Vec<ValidatorIndex> {
         let mut all_indexes: Vec<_> = self.enumerate_indexes().filter(|v| v != &exclude).collect();
         all_indexes.shuffle(&mut ThreadRng::default());

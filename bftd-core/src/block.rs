@@ -1,9 +1,10 @@
 use crate::crypto::{Blake2Hasher, Hasher, SignatureVerifier, Signer};
 use crate::metrics::Metrics;
 use crate::network::MAX_NETWORK_PAYLOAD;
-use anyhow::ensure;
+use anyhow::{bail, ensure};
 use bytes::{BufMut, Bytes, BytesMut};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fmt;
 use std::ops::Add;
 use std::sync::Arc;
@@ -138,6 +139,10 @@ impl Block {
         self.time_ns
     }
 
+    pub fn preceding(&self) -> Option<&BlockReference> {
+        self.parents.get(0)
+    }
+
     pub fn reference_from_block_bytes(data: &[u8]) -> anyhow::Result<BlockReference> {
         ensure!(data.len() >= Self::PARENTS_OFFSET, "Block too small");
         let hash = BlockHash(
@@ -248,6 +253,26 @@ impl Block {
         ensure!(
             verifier.check_signature(&self.data[Self::ROUND_OFFSET..], &self.signature),
             "Block signature verification failed"
+        );
+        ensure!(
+            self.reference.round > Round::ZERO,
+            "Should not create genesis block"
+        );
+        let Some(first_parent) = self.parents.get(0) else {
+            bail!("Non-genesis block should have at least one parent");
+        };
+        ensure!(
+            first_parent.author == self.reference.author,
+            "First parent block should be authored by the block author"
+        );
+        ensure!(
+            self.parents
+                .iter()
+                .map(BlockReference::author)
+                .collect::<HashSet<_>>()
+                .len()
+                == self.parents.len(),
+            "Parents can only contain up to 1 reference per validator"
         );
         Ok(self)
     }
@@ -437,6 +462,10 @@ impl BlockReference {
         self.round
     }
 
+    pub fn author(&self) -> ValidatorIndex {
+        self.author
+    }
+
     pub fn first_block_reference_for_round(round: Round) -> Self {
         Self {
             round,
@@ -457,6 +486,10 @@ impl BlockReference {
             author,
             hash: BlockHash::MAX,
         }
+    }
+
+    pub fn is_genesis(&self) -> bool {
+        self.round == Round::ZERO
     }
 }
 
@@ -483,6 +516,10 @@ impl AuthorRound {
 impl ValidatorIndex {
     pub fn slice_get<'a, T>(&self, v: &'a [T]) -> &'a T {
         &v[self.0 as usize]
+    }
+
+    pub fn slice_get_mut<'a, T>(&self, v: &'a mut [T]) -> &'a mut T {
+        &mut v[self.0 as usize]
     }
 }
 
@@ -593,7 +630,7 @@ pub mod tests {
         let hash = [2u8; BLOCK_HASH_LENGTH];
         let parent = BlockReference {
             round: Round(15),
-            author: ValidatorIndex(16),
+            author: ValidatorIndex(3),
             hash: BlockHash([3u8; BLOCK_HASH_LENGTH]),
         };
         let block = Block::new(
@@ -619,7 +656,7 @@ pub mod tests {
         assert_eq!(block2.parents().get(0).unwrap(), &parent);
         assert_eq!(block2.payload(), &payload);
 
-        assert!(Block::from_bytes(block.data().clone(), &hash, &signature, None).is_ok());
+        Block::from_bytes(block.data().clone(), &hash, &signature, None).unwrap();
         let mut data = BytesMut::from(block.data().as_ref());
         data[0] = 5;
         assert!(Block::from_bytes(data.into(), &hash, &signature, None).is_err());

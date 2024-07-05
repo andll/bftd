@@ -5,8 +5,9 @@ use crate::metrics::Metrics;
 use crate::store::BlockStore;
 use crate::threshold_clock::ThresholdClockAggregator;
 use bytes::Bytes;
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::BTreeSet;
 use std::future::Future;
+use std::mem;
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -62,7 +63,7 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
         let last_proposed_round = block_store.last_known_round(index);
         let proposer_clock = ThresholdClockAggregator::new(last_proposed_round);
         // todo recover other nodes for parents accumulator?
-        let parents_accumulator = ParentsAccumulator::new();
+        let parents_accumulator = ParentsAccumulator::new(index, &committee);
         let mut this = Self {
             signer,
             block_store,
@@ -158,37 +159,76 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
 }
 
 struct ParentsAccumulator {
-    parents: BTreeMap<BlockReference, Arc<Block>>,
+    this_validator: ValidatorIndex,
+    // Last seen parents by validator, up to 3 rounds
+    // Can probably use more efficient data structure than BTreeSet for this...
+    parents: Vec<BTreeSet<BlockReference>>,
+    previous_own_block: Option<BlockReference>,
 }
 
 impl ParentsAccumulator {
-    pub fn new() -> Self {
+    pub fn new(this_validator: ValidatorIndex, committee: &Committee) -> Self {
+        let parents = committee.committee_vec_default();
         Self {
-            parents: Default::default(),
+            this_validator,
+            parents,
+            previous_own_block: None,
         }
     }
 
     pub fn add_blocks(&mut self, blocks: &[Arc<Block>]) {
         for block in blocks {
-            self.parents.insert(*block.reference(), block.clone());
+            self.add_block(block);
         }
     }
 
-    pub fn take_parents(&mut self, before_round_excluded: Round) -> Vec<BlockReference> {
-        let mut remove_parents = HashSet::<BlockReference>::new();
-        let mut parents = HashSet::<BlockReference>::new();
-        let all_parents = self
-            .parents
-            .range(..BlockReference::first_block_reference_for_round(before_round_excluded));
-        let all_parents: Vec<_> = all_parents.map(|(r, _)| *r).collect();
-        for parent in all_parents {
-            let parent = self.parents.remove(&parent).unwrap();
-            remove_parents.extend(parent.parents());
-            // todo - keep own previous proposal block?
-            parents.insert(*parent.reference());
+    fn add_block(&mut self, block: &Block) {
+        if block.author() == self.this_validator {
+            if let Some(prev) = self.previous_own_block {
+                panic!(
+                    "Adding new own block {}, but did not use previous own block {prev} in parents",
+                    block.reference()
+                );
+            }
+            self.previous_own_block = Some(*block.reference());
+            return;
         }
-        parents.retain(|k| !remove_parents.contains(k));
-        parents.into_iter().collect()
+        let btree = block.author().slice_get_mut(&mut self.parents);
+        btree.insert(*block.reference());
+        if btree.len() > 3 {
+            // We only care about up to 3 highest rounds parents per validator
+            btree.pop_first();
+        }
+    }
+
+    pub fn take_parents(&mut self, proposal_round: Round) -> Vec<BlockReference> {
+        let mut parents = Vec::with_capacity(self.parents.len());
+        parents.push(
+            self.previous_own_block
+                .take()
+                .expect("Must have own block parent"),
+        );
+        for btree in self.parents.iter_mut() {
+            let mut p = btree.split_off(&BlockReference::first_block_reference_for_round(
+                proposal_round,
+            ));
+            // p is a portion of btree >= proposal_round(what we need to keep), swapping it into *btree
+            mem::swap(btree, &mut p);
+            // now p is a portion of btree < proposal_round, which is where we take parent
+            if let Some(parent) = p.pop_last() {
+                assert!(
+                    parent.round() < proposal_round,
+                    "Taking parent {parent}, proposal round {proposal_round}"
+                );
+                parents.push(parent);
+            }
+        }
+        parents
+    }
+
+    #[cfg(test)]
+    fn is_empty(&self) -> bool {
+        self.parents.iter().all(BTreeSet::is_empty) && self.previous_own_block.is_none()
     }
 }
 
@@ -206,14 +246,25 @@ mod tests {
 
     #[test]
     pub fn parents_accumulator_test() {
-        let mut pa = ParentsAccumulator::new();
-        pa.add_blocks(&[blk(1, 1, vec![br(1, 0)]), blk(1, 2, vec![br(1, 1)])]);
-        assert_eq!(pa.take_parents(Round(3)), vec![br(1, 2)]);
-        assert!(pa.parents.is_empty());
-        pa.add_blocks(&[blk(1, 1, vec![br(1, 0)]), blk(1, 2, vec![br(1, 1)])]);
-        assert_eq!(pa.take_parents(Round(2)), vec![br(1, 1)]);
-        assert_eq!(pa.parents.len(), 1);
-        assert_eq!(pa.take_parents(Round(3)), vec![br(1, 2)]);
-        assert!(pa.parents.is_empty());
+        let committee = Committee::new_test(vec![1, 2]);
+        let mut pa = ParentsAccumulator::new(ValidatorIndex(0), &committee);
+        pa.add_blocks(&[
+            blk(0, 0, vec![]),
+            blk(1, 1, vec![br(1, 0)]),
+            blk(1, 2, vec![br(1, 1)]),
+        ]);
+        assert_eq!(pa.take_parents(Round(3)), vec![br(0, 0), br(1, 2)]);
+        assert!(pa.is_empty());
+        let mut pa = ParentsAccumulator::new(ValidatorIndex(0), &committee);
+        pa.add_blocks(&[
+            blk(1, 1, vec![br(1, 0)]),
+            blk(1, 2, vec![br(1, 1)]),
+            blk(0, 0, vec![]),
+        ]);
+        assert_eq!(pa.take_parents(Round(2)), vec![br(0, 0), br(1, 1)]);
+        assert!(!pa.is_empty());
+        pa.add_blocks(&[blk(0, 1, vec![])]);
+        assert_eq!(pa.take_parents(Round(3)), vec![br(0, 1), br(1, 2)]);
+        assert!(pa.is_empty());
     }
 }
