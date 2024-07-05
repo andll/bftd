@@ -1,9 +1,10 @@
-use crate::block::{Block, BlockHash, BlockReference, Round, ValidatorIndex};
+use crate::block::{Block, BlockReference, Round, ValidatorIndex};
 use crate::consensus::Commit;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::ops::Deref;
 use std::sync::Arc;
 
+pub mod memory_store;
 pub mod rocks_store;
 #[cfg(feature = "sled_store")]
 pub mod sled_store;
@@ -140,6 +141,10 @@ pub trait BlockStore: BlockReader + Send + Sync + 'static {
     fn round_committed(&self, round: Round);
 }
 
+pub trait BlockViewStore {
+    fn get_block_view(&self, r: &BlockReference) -> Vec<Option<BlockReference>>;
+}
+
 pub trait BlockReader: Sync + 'static {
     fn get(&self, key: &BlockReference) -> Option<Arc<Block>>;
     fn get_multi<'a>(
@@ -185,92 +190,6 @@ pub trait BlockReader: Sync + 'static {
             }
         }
         parents
-    }
-}
-
-impl BlockStore for MemoryBlockStore {
-    fn put(&self, block: Arc<Block>) {
-        self.inner
-            .write()
-            .blocks
-            .entry(block.round())
-            .or_default()
-            .insert((block.author(), *block.block_hash()), block);
-    }
-
-    fn flush(&self) {}
-    fn round_committed(&self, _round: Round) {}
-}
-impl BlockReader for MemoryBlockStore {
-    fn get(&self, key: &BlockReference) -> Option<Arc<Block>> {
-        self.inner
-            .read()
-            .blocks
-            .get(&key.round)?
-            .get(&(key.author, key.hash))
-            .cloned()
-    }
-
-    fn get_own(&self, validator: ValidatorIndex, round: Round) -> Option<Arc<Block>> {
-        Some(
-            self.inner
-                .read()
-                .blocks
-                .get(&round)?
-                .range((validator, BlockHash::MIN)..(validator, BlockHash::MAX))
-                .next()?
-                .1
-                .clone(),
-        )
-    }
-
-    fn last_known_round(&self, validator: ValidatorIndex) -> Round {
-        self.last_known_block(validator).round()
-    }
-
-    fn last_known_block(&self, validator: ValidatorIndex) -> Arc<Block> {
-        // todo performance
-        let lock = self.inner.read();
-        for (_round, map) in lock.blocks.iter().rev() {
-            if let Some((_, block)) = map
-                .range((validator, BlockHash::MIN)..(validator, BlockHash::MAX))
-                .next()
-            {
-                return block.clone();
-            }
-        }
-        panic!("Should have at least one block for each validator");
-    }
-
-    fn exists(&self, key: &BlockReference) -> bool {
-        let lock = self.inner.read();
-        let m = lock.blocks.get(&key.round);
-        match m {
-            Some(map) => map.contains_key(&(key.author, key.hash)),
-            None => false,
-        }
-    }
-
-    fn get_blocks_by_round(&self, round: Round) -> Vec<Arc<Block>> {
-        let lock = self.inner.read();
-        if let Some(map) = lock.blocks.get(&round) {
-            // todo - is cloning a good idea here?
-            map.values().cloned().collect()
-        } else {
-            vec![]
-        }
-    }
-
-    fn get_blocks_at_author_round(&self, author: ValidatorIndex, round: Round) -> Vec<Arc<Block>> {
-        let lock = self.inner.read();
-        if let Some(map) = lock.blocks.get(&round) {
-            // todo - is cloning a good idea here?
-            map.range((author, BlockHash::MIN)..(author, BlockHash::MAX))
-                .map(|(_, b)| b.clone())
-                .collect()
-        } else {
-            vec![]
-        }
     }
 }
 
@@ -322,12 +241,90 @@ impl<T: BlockReader + Send> BlockReader for Arc<T> {
     }
 }
 
-#[derive(Default)]
-pub struct MemoryBlockStore {
-    inner: parking_lot::RwLock<MemoryBlockStoreInner>,
+/*
+   Block relationship.
+
+   * Block A is a **parent** of block B if block B lists reference(A) in the list B.parents
+   * Block A is **referenced** by block B if block A is in the sub-tree of parents of block B.
+   * Block A is **preceding** block B if A is a parent of B and author(A) = author(B).
+        In other words, the preceding block is a parent block authored by the same validator.
+        Every block (except for genesis blocks) has a single preceding block.
+   * The critical block for block B is defined as following:
+      * If block A is the preceding block for B and A.round < B.round - 1, then A is critical block for B
+      * If block A is a preceding block for B and A.round = B.round - 1,
+         then block preceding to A is a critical block for B.
+   * If block B has a critical block A, then B is only valid if minimum of f+1 of B's parents reference block A.
+     In a way, this critical block rule is essentially a "mirror" rule to a vector clock rule of mysticeti protocol.
+     Vector clock rule states that a validator should hear from 2f+1 of other nodes before it can produce a next block.
+     The critical block rule states that a validator should broadcast its blocks and get them included by other validators, before it can create more blocks.
+     Vector clock rule prevents validator from generating blocks if they can't receive blocks from other validators.
+     Critical block rule prevents validator from generating blocks if other validators have not received earlier blocks from this validator.
+
+     * When inserting block A into local store, we determine whether to persist a taint flag along with block A.
+       * If block preceding to A has a taint flag set, then block A also has a taint flag set
+       * If block preceding to A is not equal to the last received block from author(A) then block A also has taint flag set.
+     Unlike the other properties above, a taint flag is a **local** property of a block - correct validators do not always come to the same conclusion on whether some block is tainted or not.
+     Lemma - blocks produced by correct validators will never be perceived as tainted by other correct validators.
+
+
+*/
+pub trait DagExt: BlockReader {
+    fn merge_block_view_into(
+        &self,
+        left: &mut Vec<Option<BlockReference>>,
+        right: &Vec<Option<BlockReference>>,
+    ) {
+        for (left, right) in left.iter_mut().zip(right.iter()) {
+            let Some(left_ref) = left else {
+                // Left is already 'None', nothing to be done
+                continue;
+            };
+            let Some(right_ref) = right else {
+                // Right is 'None', left needs to be set to 'None'
+                *left = None;
+                continue;
+            };
+            if left_ref.round == right_ref.round {
+                if left_ref != right_ref {
+                    // Round is the same, references are different, setting left to None
+                    *left = None;
+                } // else: Round is the same, references are the same (no need to change left)
+            } else if left_ref.round > right_ref.round {
+                // Left is higher round then right
+                if !self.is_connected(*left_ref, right_ref) {
+                    // Left does not contain right in a tree
+                    *left = None;
+                } // else: Left is higher round and contains right (no need to change left)
+            } else
+            /* left_ref.round < right_ref.round */
+            {
+                // Right is higher round then left
+                if self.is_connected(*left_ref, right_ref) {
+                    // Right is higher round and contains left, update left to right
+                    *left = Some(*right_ref);
+                } else {
+                    // Left and right are conflicting, set left to None
+                    *left = None;
+                }
+            }
+        }
+    }
+
+    /// Checks if parent block is connected to child via the link of the preceding blocks.
+    /// This does not check if blocks are connected via links other than a preceding link.
+    fn is_connected(&self, mut parent: BlockReference, child: &BlockReference) -> bool {
+        while !parent.is_genesis() {
+            if parent == *child {
+                return true;
+            }
+            parent = *self
+                .get(&parent)
+                .expect("Parent block must be stored locally")
+                .preceding()
+                .expect("Non-genesis block must have preceding block");
+        }
+        false
+    }
 }
 
-#[derive(Default)]
-pub struct MemoryBlockStoreInner {
-    blocks: BTreeMap<Round, BTreeMap<(ValidatorIndex, BlockHash), Arc<Block>>>,
-}
+impl<T: BlockReader> DagExt for T {}
