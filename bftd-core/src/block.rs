@@ -139,6 +139,9 @@ impl Block {
         self.time_ns
     }
 
+    /// Returns a 'preceding' block - parent block authored by the same validator as this block.
+    /// This is always a first parent as verified by Block::verify.
+    /// Always returns Some value for non-genesis block, and None for genesis block.
     pub fn preceding(&self) -> Option<&BlockReference> {
         self.parents.get(0)
     }
@@ -256,7 +259,7 @@ impl Block {
         );
         ensure!(
             self.reference.round > Round::ZERO,
-            "Should not create genesis block"
+            "Should not pass genesis block to verification"
         );
         let Some(first_parent) = self.parents.get(0) else {
             bail!("Non-genesis block should have at least one parent");
