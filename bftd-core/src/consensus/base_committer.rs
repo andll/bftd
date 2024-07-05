@@ -151,10 +151,12 @@ impl<B: BlockReader> BaseCommitter<B> {
             let is_vote = if let Some(is_vote) = all_votes.get(reference) {
                 *is_vote
             } else {
-                let potential_vote = self
-                    .block_store
-                    .get(reference)
-                    .expect("We should have the whole sub-dag by now");
+                let Some(potential_vote) = self.block_store.get(reference) else {
+                    panic!(
+                        "Could not find parent {reference} of block {} in own block store",
+                        potential_certificate.reference()
+                    );
+                };
                 let is_vote = self.is_vote(&potential_vote, leader_block);
                 all_votes.insert(*reference, is_vote);
                 is_vote
