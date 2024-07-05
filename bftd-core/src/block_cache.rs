@@ -68,7 +68,7 @@ impl BlockCacheInner {
     }
 
     fn update_watermark(&mut self, new_low_watermark_included: Round) {
-        self.cache.retain(|r, _| *r > new_low_watermark_included);
+        self.cache.retain(|r, _| *r >= new_low_watermark_included);
         self.low_watermark_included = new_low_watermark_included;
     }
 }
