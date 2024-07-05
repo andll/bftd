@@ -1,6 +1,7 @@
 use crate::block::{Block, BlockHash, BlockReference, Round, ValidatorIndex};
 use crate::committee::Committee;
-use crate::store::{BlockReader, BlockStore, BlockViewStore};
+use crate::store::{BlockReader, BlockStore, BlockViewStore, DagExt};
+use parking_lot::RwLockUpgradableReadGuard;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
@@ -17,13 +18,17 @@ pub struct MemoryBlockStoreInner {
 
 impl BlockStore for MemoryBlockStore {
     fn put(&self, block: Arc<Block>) {
-        let mut lock = self.inner.write();
-        let block_view = self.genesis_view.clone();
+        let lock = self.inner.upgradable_read();
+        let mut block_view = self.genesis_view.clone();
         for parent in block.parents() {
             if parent.is_genesis() {
                 continue;
             }
+            let parent_block_view = lock.get_block_view(parent);
+            lock.merge_block_view_into(&mut block_view, &parent_block_view);
         }
+
+        let mut lock = RwLockUpgradableReadGuard::upgrade(lock);
         lock.block_view.insert(*block.reference(), block_view);
         let prev = lock
             .blocks
@@ -102,13 +107,18 @@ impl BlockReader for MemoryBlockStoreInner {
     }
 }
 
-impl BlockViewStore for MemoryBlockStore {
+impl BlockViewStore for MemoryBlockStoreInner {
     fn get_block_view(&self, r: &BlockReference) -> Vec<Option<BlockReference>> {
-        let lock = self.inner.read();
-        lock.block_view
+        self.block_view
             .get(r)
             .expect("Block view not found")
             .clone()
+    }
+}
+
+impl BlockViewStore for MemoryBlockStore {
+    fn get_block_view(&self, r: &BlockReference) -> Vec<Option<BlockReference>> {
+        self.inner.read().get_block_view(r)
     }
 }
 impl MemoryBlockStore {
