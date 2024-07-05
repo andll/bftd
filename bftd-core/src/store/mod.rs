@@ -351,7 +351,17 @@ pub trait DagExt: BlockReader + BlockViewStore {
     /// Evaluates critical block for the given block
     fn critical_block(&self, block: &Block) -> Option<BlockReference> {
         let preceding = block.preceding()?;
-        if preceding.round() == block.round().previous() {
+        self.critical_block_for_round(block.round(), preceding)
+    }
+
+    /// Evaluate what would be a critical block for a block
+    /// (which might not yet exist) with a specified round and preceding block.
+    fn critical_block_for_round(
+        &self,
+        round: Round,
+        preceding: &BlockReference,
+    ) -> Option<BlockReference> {
+        if preceding.round() == round.previous() {
             let preceding = self.get(preceding).expect("Parent block not found");
             Some(*preceding.preceding()?)
         } else {
