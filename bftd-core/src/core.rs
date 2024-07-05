@@ -194,6 +194,14 @@ impl ParentsAccumulator {
             return;
         }
         let btree = block.author().slice_get_mut(&mut self.parents);
+        let mut range = btree.range(BlockReference::range_for_round(block.round()));
+        if let Some(current) = range.next() {
+            // todo - right now this panic can actually get triggered!
+            panic!(
+                "Inserting parent for {} while already have parent {current}",
+                block.reference()
+            );
+        }
         btree.insert(*block.reference());
         if btree.len() > 3 {
             // We only care about up to 3 highest rounds parents per validator

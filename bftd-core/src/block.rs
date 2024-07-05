@@ -6,7 +6,7 @@ use bytes::{BufMut, Bytes, BytesMut};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt;
-use std::ops::Add;
+use std::ops::{Add, Range};
 use std::sync::Arc;
 
 /*
@@ -476,6 +476,12 @@ impl BlockReference {
             hash: BlockHash::MIN,
         }
     }
+
+    pub fn range_for_round(round: Round) -> Range<BlockReference> {
+        Self::first_block_reference_for_round(round)
+            ..Self::first_block_reference_for_round(round.next())
+    }
+
     pub fn first_block_reference_for_round_author(round: Round, author: ValidatorIndex) -> Self {
         Self {
             round,
@@ -517,6 +523,8 @@ impl AuthorRound {
 }
 
 impl ValidatorIndex {
+    pub const MAX: Self = Self(u64::MAX);
+
     pub fn slice_get<'a, T>(&self, v: &'a [T]) -> &'a T {
         &v[self.0 as usize]
     }
