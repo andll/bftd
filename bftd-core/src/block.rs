@@ -718,8 +718,8 @@ pub mod tests {
         }
     }
 
-    const BR_BLOCK_HASH: [u8; BLOCK_HASH_LENGTH] = [2u8; BLOCK_HASH_LENGTH];
-    const BR_SIGNATURE: [u8; SIGNATURE_LENGTH] = [3u8; SIGNATURE_LENGTH];
+    pub const BR_BLOCK_HASH: [u8; BLOCK_HASH_LENGTH] = [2u8; BLOCK_HASH_LENGTH];
+    pub const BR_SIGNATURE: [u8; SIGNATURE_LENGTH] = [3u8; SIGNATURE_LENGTH];
 
     pub fn br(author: u64, round: u64) -> BlockReference {
         BlockReference {
@@ -751,4 +751,48 @@ pub mod tests {
             None,
         ))
     }
+
+    impl BlockReference {
+        pub fn parse_test(s: &str) -> Self {
+            let author = s.chars().next().unwrap();
+            let author = author as u8 - 'A' as u8;
+            let author = ValidatorIndex(author as u64);
+            let round = s[1..].parse().unwrap();
+            let round = Round(round);
+            Self {
+                author,
+                round,
+                hash: BlockHash(BR_BLOCK_HASH),
+            }
+        }
+    }
+
+    #[macro_export]
+    macro_rules! br (
+        ($r:expr) => {crate::block::BlockReference::parse_test($r)};
+    );
+
+    #[macro_export]
+    macro_rules! b (
+        ($r:expr) => (
+            b!($r, vec![])
+        );
+        ($r:expr, $p:expr) => (
+            {
+                let parents = $p.into_iter().map(crate::block::BlockReference::parse_test).collect();
+                let r = crate::block::BlockReference::parse_test($r);
+                std::sync::Arc::new(crate::block::Block::new(
+                    r.round,
+                    r.author,
+                    crate::block::ChainId::CHAIN_ID_TEST,
+                    0, /* time_ns */
+                    &[],
+                    parents,
+                    &crate::block::tests::BR_SIGNATURE,
+                    &crate::block::tests::BR_BLOCK_HASH,
+                    None,
+                ))
+            }
+        );
+    );
 }

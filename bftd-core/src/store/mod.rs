@@ -269,61 +269,82 @@ impl<T: BlockReader + Send> BlockReader for Arc<T> {
 
 */
 pub trait DagExt: BlockReader {
+    fn merge_block_ref_into(
+        &self,
+        left: &mut Vec<Option<BlockReference>>,
+        reference: &BlockReference,
+    ) {
+        let left = reference.author.slice_get_mut(left);
+        self.merge_one_block_ref(left, &Some(*reference))
+    }
+
     fn merge_block_view_into(
         &self,
         left: &mut Vec<Option<BlockReference>>,
         right: &Vec<Option<BlockReference>>,
     ) {
         for (left, right) in left.iter_mut().zip(right.iter()) {
-            let Some(left_ref) = left else {
-                // Left is already 'None', nothing to be done
-                continue;
-            };
-            let Some(right_ref) = right else {
-                // Right is 'None', left needs to be set to 'None'
+            self.merge_one_block_ref(left, right)
+        }
+    }
+
+    fn merge_one_block_ref(
+        &self,
+        left: &mut Option<BlockReference>,
+        right: &Option<BlockReference>,
+    ) {
+        let Some(left_ref) = left else {
+            // Left is already 'None', nothing to be done
+            return;
+        };
+        let Some(right_ref) = right else {
+            // Right is 'None', left needs to be set to 'None'
+            *left = None;
+            return;
+        };
+        if left_ref.round == right_ref.round {
+            if left_ref != right_ref {
+                // Round is the same, references are different, setting left to None
                 *left = None;
-                continue;
-            };
-            if left_ref.round == right_ref.round {
-                if left_ref != right_ref {
-                    // Round is the same, references are different, setting left to None
-                    *left = None;
-                } // else: Round is the same, references are the same (no need to change left)
-            } else if left_ref.round > right_ref.round {
-                // Left is higher round then right
-                if !self.is_connected(*left_ref, right_ref) {
-                    // Left does not contain right in a tree
-                    *left = None;
-                } // else: Left is higher round and contains right (no need to change left)
-            } else
-            /* left_ref.round < right_ref.round */
-            {
-                // Right is higher round then left
-                if self.is_connected(*left_ref, right_ref) {
-                    // Right is higher round and contains left, update left to right
-                    *left = Some(*right_ref);
-                } else {
-                    // Left and right are conflicting, set left to None
-                    *left = None;
-                }
+            } // else: Round is the same, references are the same (no need to change left)
+        } else if left_ref.round > right_ref.round {
+            // Left is higher round then right
+            if !self.is_connected(*left_ref, right_ref) {
+                // Left does not contain right in a tree
+                println!("left({left_ref}) is not connected to right({right_ref})");
+                *left = None;
+            } // else: Left is higher round and contains right (no need to change left)
+        } else
+        /* right_ref.round > left_ref.round  */
+        {
+            // Right is higher round then left
+            if self.is_connected(*right_ref, left_ref) {
+                // Right is higher round and contains left, update left to right
+                *left = Some(*right_ref);
+            } else {
+                println!("right({right_ref}) is not connected to left({left_ref})");
+                // Left and right are conflicting, set left to None
+                *left = None;
             }
         }
     }
 
     /// Checks if parent block is connected to child via the link of the preceding blocks.
     /// This does not check if blocks are connected via links other than a preceding link.
-    fn is_connected(&self, mut parent: BlockReference, child: &BlockReference) -> bool {
-        while !parent.is_genesis() {
-            if parent == *child {
+    fn is_connected(&self, mut block: BlockReference, root: &BlockReference) -> bool {
+        loop {
+            if block == *root {
                 return true;
             }
-            parent = *self
-                .get(&parent)
+            if block.is_genesis() {
+                return false;
+            }
+            block = *self
+                .get(&block)
                 .expect("Parent block must be stored locally")
                 .preceding()
                 .expect("Non-genesis block must have preceding block");
         }
-        false
     }
 }
 

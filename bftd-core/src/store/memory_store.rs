@@ -26,10 +26,13 @@ impl BlockStore for MemoryBlockStore {
             }
             let parent_block_view = lock.get_block_view(parent);
             lock.merge_block_view_into(&mut block_view, &parent_block_view);
+            lock.merge_block_ref_into(&mut block_view, parent);
         }
 
         let mut lock = RwLockUpgradableReadGuard::upgrade(lock);
-        lock.block_view.insert(*block.reference(), block_view);
+        if !block.is_genesis() {
+            lock.block_view.insert(*block.reference(), block_view);
+        }
         let prev = lock
             .blocks
             .entry(block.round())
@@ -109,10 +112,10 @@ impl BlockReader for MemoryBlockStoreInner {
 
 impl BlockViewStore for MemoryBlockStoreInner {
     fn get_block_view(&self, r: &BlockReference) -> Vec<Option<BlockReference>> {
-        self.block_view
-            .get(r)
-            .expect("Block view not found")
-            .clone()
+        let Some(bv) = self.block_view.get(r) else {
+            panic!("Block view for {r} not found")
+        };
+        bv.clone()
     }
 }
 
@@ -132,6 +135,22 @@ impl MemoryBlockStore {
             genesis_view,
             inner: Default::default(),
         }
+    }
+
+    #[cfg(test)]
+    pub fn from_genesis_blocks(genesis_blocks: Vec<Arc<Block>>) -> Self {
+        let genesis_view = genesis_blocks
+            .iter()
+            .map(|b| Some(*b.reference()))
+            .collect();
+        let this = Self {
+            genesis_view,
+            inner: Default::default(),
+        };
+        for block in genesis_blocks {
+            this.put(block);
+        }
+        this
     }
 }
 
@@ -162,5 +181,79 @@ impl BlockReader for MemoryBlockStore {
 
     fn get_blocks_at_author_round(&self, author: ValidatorIndex, round: Round) -> Vec<Arc<Block>> {
         self.inner.read().get_blocks_at_author_round(author, round)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::block::tests::blk;
+    use crate::{b, br};
+
+    macro_rules! parse_br_option (
+        ($p:expr) => (
+            if $p == "_" {
+                None
+            } else {
+                Some(br!($p))
+            }
+        );
+    );
+
+    macro_rules! bw (
+        ($p:expr) => (
+            $p.into_iter().map(|v|parse_br_option!(v)).collect::<Vec<_>>()
+        );
+    );
+
+    #[test]
+    fn test_block_view() {
+        let committee = Committee::new_test(vec![1; 5]);
+        let genesis_blocks = committee
+            .enumerate_indexes()
+            .map(|vi| blk(vi.0, 0, vec![]))
+            .collect();
+        let store = MemoryBlockStore::from_genesis_blocks(genesis_blocks);
+        store.put(b!("A1", ["A0", "B0", "C0"]));
+        assert_eq!(
+            store.get_block_view(&br!("A1")),
+            bw!(["A0", "B0", "C0", "D0", "E0"])
+        );
+        store.put(b!("B1", ["B0", "C0"]));
+        assert_eq!(
+            store.get_block_view(&br!("B1")),
+            bw!(["A0", "B0", "C0", "D0", "E0"])
+        );
+        store.put(b!("B2", ["B1", "C0"]));
+        assert_eq!(
+            store.get_block_view(&br!("B2")),
+            bw!(["A0", "B1", "C0", "D0", "E0"])
+        );
+        store.put(b!("C2", ["C0", "B0"]));
+        assert_eq!(
+            store.get_block_view(&br!("C2")),
+            bw!(["A0", "B0", "C0", "D0", "E0"])
+        );
+        store.put(b!("C4", ["C0", "B0"]));
+        assert_eq!(
+            store.get_block_view(&br!("C4")),
+            bw!(["A0", "B0", "C0", "D0", "E0"])
+        );
+        store.put(b!("B3", ["B2", "C2"]));
+        assert_eq!(
+            store.get_block_view(&br!("B3")),
+            bw!(["A0", "B2", "C2", "D0", "E0"])
+        );
+        store.put(b!("A5", ["A0", "B2", "C4"]));
+        assert_eq!(
+            store.get_block_view(&br!("A5")),
+            bw!(["A0", "B2", "C4", "D0", "E0"])
+        );
+        store.put(b!("B6", ["B3", "A5"]));
+        // B3 sees C2 and A5 sees C4 => C has block view set to None
+        assert_eq!(
+            store.get_block_view(&br!("B6")),
+            bw!(["A5", "B3", "_", "D0", "E0"])
+        );
     }
 }
