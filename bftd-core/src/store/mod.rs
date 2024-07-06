@@ -136,14 +136,21 @@ mod tests {
 }
 
 pub trait BlockStore: BlockReader + Send + Sync + 'static {
+    /// Inserts block into block store.
+    /// If block store also implements BlockViewStore,
+    /// it should also evaluate and store block view for a given block.
     fn put(&self, block: Arc<Block>);
+    /// Flushes block store. This is called after the proposal is generated.
     fn flush(&self);
 
     /// Informs store that **some** leader at round was committed; it can be used to optimize caching
     fn round_committed(&self, round: Round);
 }
 
+/// Store provides block view information
 pub trait BlockViewStore {
+    /// Returns block view for a given block.
+    /// Block view should exist for every non-genesis block in the store.
     fn get_block_view(&self, r: &BlockReference) -> Vec<Option<BlockReference>>;
 }
 
@@ -240,6 +247,12 @@ impl<T: BlockReader + Send> BlockReader for Arc<T> {
 
     fn linked_to_round(&self, block: &Arc<Block>, round: Round) -> Vec<Arc<Block>> {
         self.deref().linked_to_round(block, round)
+    }
+}
+
+impl<T: BlockViewStore> BlockViewStore for Arc<T> {
+    fn get_block_view(&self, r: &BlockReference) -> Vec<Option<BlockReference>> {
+        self.deref().get_block_view(r)
     }
 }
 
