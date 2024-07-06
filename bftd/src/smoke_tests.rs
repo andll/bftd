@@ -13,7 +13,7 @@ use tokio::runtime::{Builder, Runtime};
 use tokio::sync::watch;
 
 #[test]
-fn smoke_test() {
+fn smoke_test_all_up() {
     const BASE_PORT: usize = 11_000;
     enable_test_logging_smoke_test();
     const NUM_PEERS: usize = 10;
