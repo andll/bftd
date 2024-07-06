@@ -1,7 +1,7 @@
 use crate::block::{ValidatorIndex, MAX_BLOCK_SIZE};
 use crate::metrics::Metrics;
-use crate::network::{Connection, NetworkMessage};
-use crate::network::{ConnectionPool, NoisePublicKey};
+use crate::network::NoisePublicKey;
+use crate::network::{Connection, ConnectionPool, NetworkMessage};
 use bytes::Bytes;
 use futures::future::{join_all, select_all, Either};
 use futures::FutureExt;
@@ -58,8 +58,8 @@ pub trait NetworkRpcRouter: Send {
 }
 
 impl NetworkRpc {
-    pub fn start(
-        pool: ConnectionPool,
+    pub fn start<Pool: ConnectionPool>(
+        pool: Pool,
         peer_routers: HashMap<NoisePublicKey, Box<dyn NetworkRpcRouter>>,
         metrics: Arc<Metrics>,
     ) -> Self {
@@ -170,8 +170,8 @@ impl NetworkRpc {
     }
 }
 
-struct RpcTask {
-    pool: ConnectionPool,
+struct RpcTask<Pool> {
+    pool: Pool,
     peer_task_data: HashMap<NoisePublicKey, PeerTaskData>,
     connection_status: HashMap<NoisePublicKey, Arc<AtomicBool>>,
     connection_counter: Arc<AtomicUsize>,
@@ -185,7 +185,7 @@ struct PeerTaskData {
     receiver: mpsc::Receiver<PeerRpcTaskCommand>,
 }
 
-impl RpcTask {
+impl<Pool: ConnectionPool> RpcTask<Pool> {
     async fn run(mut self) {
         let mut peer_tasks: HashMap<
             NoisePublicKey,
@@ -270,6 +270,7 @@ impl RpcTask {
             )
             .await;
         }
+        self.pool.shutdown().await;
     }
 }
 

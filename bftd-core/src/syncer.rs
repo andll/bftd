@@ -119,10 +119,11 @@ impl Syncer {
         C: Clock + Clone,
         P: ProposalMaker,
         F: BlockFilter,
+        CP: ConnectionPool,
     >(
         core: Core<S, B>,
         block_store: B,
-        pool: ConnectionPool,
+        pool: CP,
         clock: C,
         proposer: P,
         block_filter: F,

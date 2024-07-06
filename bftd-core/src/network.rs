@@ -31,6 +31,11 @@ const WRITE_BUFFER_SIZE: usize = MAX_ENCRYPTED_MESSAGE + NETWORK_MESSAGE_HEADER_
 pub const MAX_NETWORK_PAYLOAD: usize = MAX_NOISE_MESSAGE * MAX_NOISE_CHUNKS;
 const INIT_PAYLOAD: [u8; 4] = [10, 15, 32, 5];
 
+pub trait ConnectionPool: Send + 'static {
+    fn connections(&mut self) -> &mut mpsc::Receiver<Connection>;
+    fn shutdown(self) -> impl Future<Output = ()> + Send + 'static;
+}
+
 // todo
 // timeout
 // measure ping
@@ -38,7 +43,7 @@ const INIT_PAYLOAD: [u8; 4] = [10, 15, 32, 5];
 // improve task tracking
 // resolve periodically on reconnect
 // noise re-cipher
-pub struct ConnectionPool {
+pub struct TcpConnectionPool {
     acceptor_task: JoinHandle<io::Result<()>>,
     connections: mpsc::Receiver<Connection>,
     connection_tasks: Vec<JoinHandle<()>>,
@@ -99,7 +104,7 @@ struct FrameWriter {
     transport_state: Option<Arc<Mutex<TransportState>>>,
 }
 
-impl ConnectionPool {
+impl TcpConnectionPool {
     pub async fn start<A: ToSocketAddrs>(
         addr: A,
         pk: NoisePrivateKey,
@@ -300,6 +305,16 @@ impl PeerTask {
             writer,
             addr: peer.address,
         })
+    }
+}
+
+impl ConnectionPool for TcpConnectionPool {
+    fn connections(&mut self) -> &mut mpsc::Receiver<Connection> {
+        &mut self.connections
+    }
+
+    fn shutdown(self) -> impl Future<Output = ()> + Send + 'static {
+        self.shutdown()
     }
 }
 
@@ -669,7 +684,7 @@ pub fn generate_network_keypair() -> (NoisePrivateKey, NoisePublicKey) {
 
 #[cfg(test)]
 pub struct TestConnectionPool {
-    pub pools: Vec<ConnectionPool>,
+    pub pools: Vec<TcpConnectionPool>,
     pub pub_keys: Vec<NoisePublicKey>,
     pub runtimes: Vec<tokio::runtime::Runtime>,
 }
@@ -718,7 +733,7 @@ impl TestConnectionPool {
             .enumerate()
             .map(|(i, ((pk, peer), runtime))| {
                 runtime.spawn(
-                    ConnectionPool::start(peer.address, pk.into(), peers.clone(), i)
+                    TcpConnectionPool::start(peer.address, pk.into(), peers.clone(), i)
                         .map(|r| r.unwrap()),
                 )
             })
@@ -736,7 +751,7 @@ impl TestConnectionPool {
     pub fn into_parts<const N: usize>(
         self,
     ) -> (
-        [ConnectionPool; N],
+        [TcpConnectionPool; N],
         [NoisePublicKey; N],
         Vec<tokio::runtime::Runtime>,
     ) {
@@ -749,7 +764,7 @@ impl TestConnectionPool {
         (pools, pub_keys, self.runtimes)
     }
 
-    pub fn take_pools(&mut self) -> Vec<ConnectionPool> {
+    pub fn take_pools(&mut self) -> Vec<TcpConnectionPool> {
         let mut v = Vec::new();
         std::mem::swap(&mut v, &mut self.pools);
         v

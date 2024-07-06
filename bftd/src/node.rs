@@ -9,7 +9,7 @@ use bftd_core::core::Core;
 use bftd_core::crypto::Ed25519Signer;
 use bftd_core::genesis::Genesis;
 use bftd_core::metrics::Metrics;
-use bftd_core::network::{ConnectionPool, NoisePrivateKey};
+use bftd_core::network::{NoisePrivateKey, TcpConnectionPool};
 use bftd_core::store::rocks_store::RocksStore;
 use bftd_core::syncer::{Syncer, SystemTimeClock};
 use futures::future::join_all;
@@ -90,7 +90,7 @@ impl Node {
             resolve_one(committee.network_address(self.config.validator_index))
         };
 
-        let pool = ConnectionPool::start(
+        let pool = TcpConnectionPool::start(
             bind,
             self.noise_private_key.clone(),
             peers,
