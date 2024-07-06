@@ -288,6 +288,42 @@ impl<T: BlockViewStore> BlockViewStore for Arc<T> {
      Unlike the other properties above, a taint flag is a **local** property of a block - correct validators do not always come to the same conclusion on whether some block is tainted or not.
      Lemma - blocks produced by correct validators will never be perceived as tainted by other correct validators.
 
+    * BlockView(A) where A is a block and V is a given validator defined as the following:
+      * For each genesis block G and validator V, BlockView(G)[V] := GenesisBlock(V)
+      * For each non-genesis block A,
+        def BlockView(A) :=
+          block_view = BlockView(A.preceding)
+          for parent in A.parents:
+             block_view = merge_block_view(block_view, BlockView(parent))
+             block_view[parent.author] = merge_view_element(block_view[parent.author], parent)
+          return block_view
+    * merge_block_view operator is defined as the following:
+      merge_block_view(A, B) = {for each validator V, V => merge_view_element(block_view(A)[V], block_view(B)[V]}
+      def merge_view_element(LeftView, RightView):
+         if LeftView is None || RightView is None:
+            return None
+         if !mainline_connected(LeftView, RightView):
+            return None
+         if LeftView.round > RightView.round:
+            return LeftView
+         else
+            return RightView
+    * Because BlockView(A) is only a function of A and its sub-dag, all correct validators will evaluate same BlockView(A) for any block A.
+    * BlockView(A) can be cached when A is inserted into block store, to avoid expensive computations.
+    * Lemma. For any given block A, BlockView(A)[V] is None if and only if sub-dag of A contains two blocks produced by V that are not connected to each other via mainline.
+      If sub-dag of A only contains blocks produced by V that mainline connects, merge_view_element will never return None, and therefore BlockView(A)[V] will not be None.
+      Let's say sub-dag of A contains two blocks B and B` that are both produced by V, but are not part of same mainline.
+      Because sub-dag of A contains B and B`, it also contains some blocks X with parents T and T`,
+      such as sub-dag of T only contains B and sub-dag of T` only contains B`.
+      BlockView(T)[V] will point to some block C, produced by validator V, and
+      BlockView(T`)[V] will point to some block C`, also produced by V.
+      Block B will be on mainline of C, and B` on mainline of C`.
+      Because X references both T and T` as parents, merging BlockView(T) and BlockView(T`) on validator V will produce None, and BlockView(X)[V] will be set to None.
+      Because BlockView(X)[V] is None, all blocks that contain X in the sub-dag will have BlockView[V] set to None.
+      Because sub-dag of A contains X, BlockView(A)[V] is also None.
+    * In other words, BlockView for block A maps validator V to its last produced block (as seen by A's sub-dag) if V did not equivocate in A's sub-dag, and None otherwise.
+    * Lemma - for any block A and any correct validator V, BlockView(A)[V] is not None:
+      Because any two blocks produced by a correct validator are connected via mainline, BlockView(A)[V] is not None.
 
 */
 pub trait DagExt: BlockReader + BlockViewStore {
