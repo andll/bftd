@@ -271,6 +271,7 @@ impl<T: BlockViewStore> BlockViewStore for Arc<T> {
    * Block A is **preceding** block B if A is a parent of B and author(A) = author(B).
         In other words, the preceding block is a parent block authored by the same validator.
         Every block (except for genesis blocks) has a single preceding block.
+   * The mainline of block A is set of blocks formed as transitive closure of the preceding operator.
    * The critical block for block B is defined as following:
       * If block A is the preceding block for B and A.round < B.round - 1, then A is critical block for B
       * If block A is a preceding block for B and A.round = B.round - 1,
