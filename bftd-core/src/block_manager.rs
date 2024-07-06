@@ -188,6 +188,14 @@ mod tests {
             self.lock().insert(*block.reference(), block);
         }
 
+        fn put_with_block_view(
+            &self,
+            _block: Arc<Block>,
+            _block_view: Vec<Option<BlockReference>>,
+        ) {
+            unimplemented!()
+        }
+
         fn flush(&self) {}
         fn round_committed(&self, _round: Round) {}
     }

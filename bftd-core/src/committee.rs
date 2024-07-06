@@ -130,6 +130,14 @@ impl Committee {
         self.validators.iter().map(|_| Default::default()).collect()
     }
 
+    /// Returns block view of genesis blocks
+    pub fn genesis_view(&self) -> Vec<Option<BlockReference>> {
+        self.genesis_blocks()
+            .into_iter()
+            .map(|b| Some(*b.reference()))
+            .collect()
+    }
+
     pub fn all_indexes_shuffled_excluding(&self, exclude: ValidatorIndex) -> Vec<ValidatorIndex> {
         let mut all_indexes: Vec<_> = self.enumerate_indexes().filter(|v| v != &exclude).collect();
         all_indexes.shuffle(&mut ThreadRng::default());

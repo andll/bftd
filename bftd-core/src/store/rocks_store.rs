@@ -21,7 +21,7 @@ impl RocksStore {
         committee: &Committee,
         metrics: Arc<Metrics>,
     ) -> Result<Self, rocksdb::Error> {
-        let genesis_view = committee.committee_vec_default();
+        let genesis_view = committee.genesis_view();
         Ok(Self {
             db,
             genesis_view,
@@ -80,10 +80,13 @@ impl RocksStore {
 
 impl BlockStore for RocksStore {
     fn put(&self, block: Arc<Block>) {
+        let block_view = self.fill_block_view(&block, &self.genesis_view);
+        self.put_with_block_view(block, block_view)
+    }
+
+    fn put_with_block_view(&self, block: Arc<Block>, block_view: Vec<Option<BlockReference>>) {
         let index_key = block.reference().author_round_hash_encoding();
         let block_key = block.reference().round_author_hash_encoding();
-        let mut block_view = self.genesis_view.clone();
-        self.fill_block_view(&block, &mut block_view);
         let block_view = bincode::serialize(&block_view).expect("Failed to serialize block view");
         self.db
             .put_cf(self.index(), &index_key, &block_key)

@@ -140,6 +140,9 @@ pub trait BlockStore: BlockReader + Send + Sync + 'static {
     /// If block store also implements BlockViewStore,
     /// it should also evaluate and store block view for a given block.
     fn put(&self, block: Arc<Block>);
+
+    /// Inserts block into block store along with pre-computed block_view.
+    fn put_with_block_view(&self, block: Arc<Block>, block_view: Vec<Option<BlockReference>>);
     /// Flushes block store. This is called after the proposal is generated.
     fn flush(&self);
 
@@ -154,7 +157,7 @@ pub trait BlockViewStore {
     fn get_block_view(&self, r: &BlockReference) -> Vec<Option<BlockReference>>;
 }
 
-pub trait BlockReader: Sync + 'static {
+pub trait BlockReader {
     fn get(&self, key: &BlockReference) -> Option<Arc<Block>>;
     fn get_multi<'a>(
         &self,
@@ -205,6 +208,10 @@ pub trait BlockReader: Sync + 'static {
 impl<T: BlockStore> BlockStore for Arc<T> {
     fn put(&self, block: Arc<Block>) {
         self.deref().put(block)
+    }
+
+    fn put_with_block_view(&self, block: Arc<Block>, block_view: Vec<Option<BlockReference>>) {
+        self.deref().put_with_block_view(block, block_view)
     }
 
     fn flush(&self) {
@@ -323,21 +330,27 @@ pub trait DagExt: BlockReader + BlockViewStore {
                 *left = None;
             } // else: Round is the same, references are the same (no need to change left)
         } else if left_ref.round > right_ref.round {
+            if left_ref.round.0 - right_ref.round.0 > 20 {
+                tracing::warn!("left({left_ref}) far from right({right_ref})");
+            }
             // Left is higher round then right
             if !self.is_connected(*left_ref, right_ref) {
                 // Left does not contain right in a tree
-                println!("left({left_ref}) is not connected to right({right_ref})");
+                tracing::warn!("left({left_ref}) is not connected to right({right_ref})");
                 *left = None;
             } // else: Left is higher round and contains right (no need to change left)
         } else
         /* right_ref.round > left_ref.round  */
         {
+            if right_ref.round.0 - left_ref.round.0 > 20 {
+                tracing::warn!("right({right_ref}) far from left({left_ref})");
+            }
             // Right is higher round then left
             if self.is_connected(*right_ref, left_ref) {
                 // Right is higher round and contains left, update left to right
                 *left = Some(*right_ref);
             } else {
-                println!("right({right_ref}) is not connected to left({left_ref})");
+                tracing::warn!("right({right_ref}) is not connected to left({left_ref})");
                 // Left and right are conflicting, set left to None
                 *left = None;
             }
@@ -407,15 +420,43 @@ pub trait DagExt: BlockReader + BlockViewStore {
         Some(stake)
     }
 
-    fn fill_block_view(&self, block: &Block, block_view: &mut Vec<Option<BlockReference>>) {
+    fn fill_block_view(
+        &self,
+        block: &Block,
+        genesis_view: &Vec<Option<BlockReference>>,
+    ) -> Vec<Option<BlockReference>> {
+        let span = tracing::span!(
+            tracing::Level::WARN,
+            "fill_block_view",
+            "{}",
+            block.reference()
+        );
+        let _enter = span.enter();
+        let mut block_view: Option<Vec<Option<BlockReference>>> = None;
         for parent in block.parents() {
             if parent.is_genesis() {
+                if block_view.is_none() {
+                    block_view = Some(genesis_view.clone());
+                }
                 continue;
             }
             let parent_block_view = self.get_block_view(parent);
-            self.merge_block_view_into(block_view, &parent_block_view);
-            self.merge_block_ref_into(block_view, parent);
+            if let Some(block_view) = &mut block_view {
+                let span = tracing::span!(
+                    tracing::Level::WARN,
+                    "parent_block_view",
+                    "{parent}: {parent_block_view:?}"
+                );
+                let _enter = span.enter();
+                self.merge_block_view_into(block_view, &parent_block_view);
+                self.merge_block_ref_into(block_view, parent);
+            } else {
+                block_view = Some(parent_block_view);
+            }
         }
+        // todo unwrap_or_else needed because we insert genesis blocks via block_store.put and
+        // execute this code path for them (which we should not)
+        block_view.unwrap_or_else(|| genesis_view.clone())
     }
 }
 

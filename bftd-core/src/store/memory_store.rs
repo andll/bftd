@@ -19,10 +19,24 @@ pub struct MemoryBlockStoreInner {
 impl BlockStore for MemoryBlockStore {
     fn put(&self, block: Arc<Block>) {
         let lock = self.inner.upgradable_read();
-        let mut block_view = self.genesis_view.clone();
-        lock.fill_block_view(&block, &mut block_view);
+        let block_view = self.fill_block_view(&block, &self.genesis_view);
 
         let mut lock = RwLockUpgradableReadGuard::upgrade(lock);
+        if !block.is_genesis() {
+            lock.block_view.insert(*block.reference(), block_view);
+        }
+        let prev = lock
+            .blocks
+            .entry(block.round())
+            .or_default()
+            .insert((block.author(), *block.block_hash()), block);
+        if prev.is_some() {
+            panic!("Re-inserting block that was already inserted");
+        }
+    }
+
+    fn put_with_block_view(&self, block: Arc<Block>, block_view: Vec<Option<BlockReference>>) {
+        let mut lock = self.inner.write();
         if !block.is_genesis() {
             lock.block_view.insert(*block.reference(), block_view);
         }
@@ -119,11 +133,7 @@ impl BlockViewStore for MemoryBlockStore {
 }
 impl MemoryBlockStore {
     pub fn from_committee(committee: &Committee) -> Self {
-        let genesis_blocks = committee.genesis_blocks();
-        let genesis_view = genesis_blocks
-            .into_iter()
-            .map(|b| Some(*b.reference()))
-            .collect();
+        let genesis_view = committee.genesis_view();
         Self {
             genesis_view,
             inner: Default::default(),

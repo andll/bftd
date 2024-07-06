@@ -456,7 +456,7 @@ struct PeerRouter<B, C, F> {
     peer_index: ValidatorIndex,
 }
 
-impl<B: BlockReader + Send, C: Clock, F: BlockFilter> PeerRouter<B, C, F> {
+impl<B: BlockReader + Send + Sync + 'static, C: Clock, F: BlockFilter> PeerRouter<B, C, F> {
     fn stream_rpc(
         &mut self,
         req: NetworkRequest,
@@ -634,7 +634,7 @@ impl<B, F: BlockFilter, C: Clock> SyncerInner<B, F, C> {
     }
 }
 
-impl<B: BlockReader + Send, C: Clock + Clone, F: BlockFilter> NetworkRpcRouter
+impl<B: BlockReader + Send + Sync + 'static, C: Clock + Clone, F: BlockFilter> NetworkRpcRouter
     for PeerRouter<B, C, F>
 {
     fn rpc(&mut self, req: NetworkRequest) -> NetworkResponse {
