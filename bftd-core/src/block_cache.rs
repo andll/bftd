@@ -268,6 +268,8 @@ impl BlockReader for BlockCacheInner {
     }
 }
 
+// Implementing BlockViewStore and BlockReader for (&BlockCacheInner, &B)
+// This allows running DagExt::fill_block_view to leverage locked cache but fallback to storage if needed
 impl<B: BlockViewStore> BlockViewStore for (&BlockCacheInner, &B) {
     fn get_block_view(&self, r: &BlockReference) -> Vec<Option<BlockReference>> {
         if self.0.cached_round(r.round) {
