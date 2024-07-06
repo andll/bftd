@@ -106,7 +106,8 @@ mod tests {
     #[test]
     fn commit_interpreter_test() {
         let dir = TempDir::new("commit_interpreter_test").unwrap();
-        let store = RocksStore::open(dir, Metrics::new_test()).unwrap();
+        let committee = Committee::new_test(vec![1; 3]);
+        let store = RocksStore::open(dir, &committee, Metrics::new_test()).unwrap();
         store.put(blk(0, 0, vec![]));
         let b0 = blk(1, 0, vec![]);
         store.put(b0.clone());

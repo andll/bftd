@@ -1,8 +1,9 @@
 use crate::block::{Block, BlockReference, Round, ValidatorIndex};
+use crate::committee::Committee;
 use crate::consensus::Commit;
 use crate::metrics::Metrics;
-use crate::store::CommitStore;
 use crate::store::{BlockReader, BlockStore};
+use crate::store::{BlockViewStore, CommitStore, DagExt};
 use bytes::Bytes;
 use rocksdb::{ColumnFamily, Direction, IteratorMode, Options, DB};
 use std::path::Path;
@@ -10,22 +11,36 @@ use std::sync::Arc;
 
 pub struct RocksStore {
     db: Arc<DB>,
+    genesis_view: Vec<Option<BlockReference>>,
     metrics: Arc<Metrics>,
 }
 
 impl RocksStore {
-    pub fn from_db(db: Arc<DB>, metrics: Arc<Metrics>) -> Result<Self, rocksdb::Error> {
-        Ok(Self { db, metrics })
+    pub fn from_db(
+        db: Arc<DB>,
+        committee: &Committee,
+        metrics: Arc<Metrics>,
+    ) -> Result<Self, rocksdb::Error> {
+        let genesis_view = committee.committee_vec_default();
+        Ok(Self {
+            db,
+            genesis_view,
+            metrics,
+        })
     }
 
-    pub fn open(path: impl AsRef<Path>, metrics: Arc<Metrics>) -> Result<Self, rocksdb::Error> {
+    pub fn open(
+        path: impl AsRef<Path>,
+        committee: &Committee,
+        metrics: Arc<Metrics>,
+    ) -> Result<Self, rocksdb::Error> {
         let db = DB::open_cf(&Self::options(), path, Self::cfs())?;
         let db = Arc::new(db);
-        Self::from_db(db, metrics)
+        Self::from_db(db, committee, metrics)
     }
 
     pub fn cfs() -> &'static [&'static str] {
-        &["blocks", "index", "commits", "block_commits"]
+        &["blocks", "index", "commits", "block_commits", "block_view"]
     }
 
     pub fn options() -> Options {
@@ -57,14 +72,24 @@ impl RocksStore {
     fn block_commits(&self) -> &ColumnFamily {
         self.db.cf_handle("block_commits").unwrap()
     }
+
+    fn block_view(&self) -> &ColumnFamily {
+        self.db.cf_handle("block_view").unwrap()
+    }
 }
 
 impl BlockStore for RocksStore {
     fn put(&self, block: Arc<Block>) {
         let index_key = block.reference().author_round_hash_encoding();
         let block_key = block.reference().round_author_hash_encoding();
+        let mut block_view = self.genesis_view.clone();
+        self.fill_block_view(&block, &mut block_view);
+        let block_view = bincode::serialize(&block_view).expect("Failed to serialize block view");
         self.db
             .put_cf(self.index(), &index_key, &block_key)
+            .expect("Storage operation failed");
+        self.db
+            .put_cf(self.block_view(), &block_key, &block_view)
             .expect("Storage operation failed");
         self.db
             .put_cf(self.blocks(), &block_key, block.data())
@@ -219,6 +244,19 @@ impl CommitStore for RocksStore {
     }
 }
 
+impl BlockViewStore for RocksStore {
+    fn get_block_view(&self, r: &BlockReference) -> Vec<Option<BlockReference>> {
+        let block_view = self
+            .db
+            .get_cf(self.block_view(), r.round_author_hash_encoding())
+            .expect("Storage operation failed");
+        let Some(block_view) = block_view else {
+            panic!("Block view for block {r} not found");
+        };
+        bincode::deserialize(&block_view).expect("Failed to deserialize block view")
+    }
+}
+
 fn bound_iter<'a, const N: usize>(
     it: impl Iterator<Item = Result<(Box<[u8]>, Box<[u8]>), rocksdb::Error>> + 'a,
     upper_bound_included: &'a [u8; N],
@@ -258,7 +296,8 @@ mod tests {
     #[test]
     fn rocks_store_test() {
         let dir = TempDir::new("sled_store_test").unwrap();
-        let store = RocksStore::open(dir, Metrics::new_test()).unwrap();
+        let committee = Committee::new_test(vec![1; 3]);
+        let store = RocksStore::open(dir, &committee, Metrics::new_test()).unwrap();
         for author in 0..3 {
             for round in 0..(author + 2) {
                 store.put(blk(author, round, vec![]));
@@ -307,7 +346,8 @@ mod tests {
     #[test]
     fn rocks_commit_store_test() {
         let dir = TempDir::new("sled_commit_store_test").unwrap();
-        let store = RocksStore::open(dir, Metrics::new_test()).unwrap();
+        let committee = Committee::new_test(vec![1; 3]);
+        let store = RocksStore::open(dir, &committee, Metrics::new_test()).unwrap();
         store.store_commit(&c(0, br(1, 1)));
         let last = c(1, br(2, 1));
         store.store_commit(&last);

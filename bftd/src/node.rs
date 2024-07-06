@@ -99,7 +99,7 @@ impl Node {
         .await?;
         let registry = Registry::new();
         let metrics = Metrics::new_in_registry(&registry, &committee);
-        let block_store = RocksStore::open(&self.storage_path, metrics.clone())?;
+        let block_store = RocksStore::open(&self.storage_path, &committee, metrics.clone())?;
         let block_store = BlockCache::new(block_store);
         let block_store = Arc::new(block_store);
         let prometheus_handle = if let Some(prometheus_bind) = self.config.prometheus_bind {
