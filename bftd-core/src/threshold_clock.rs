@@ -1,36 +1,39 @@
 use crate::block::{Block, BlockReference, Round, ValidatorIndex};
 use crate::committee::{Committee, Stake};
+use anyhow::bail;
 use std::cmp::Ordering;
 use std::marker::PhantomData;
 
 // A block is threshold clock valid if:
 // - all included blocks have a round number lower than the block round number.
 // - the set of authorities with blocks included has a quorum in the current committee.
-// todo - tests and usage
-#[allow(dead_code)]
-pub fn threshold_clock_valid_non_genesis(block: &Block, committee: &Committee) -> bool {
+// todo - tests
+pub fn verify_threshold_clock(block: &Block, committee: &Committee) -> anyhow::Result<()> {
     // get a committee from the creator of the block
-    let round_number = block.reference().round;
-    let previous_round = round_number.previous();
+    let round = block.round();
+    let previous_round = round.previous();
 
     // Ensure all includes have a round number smaller than the block round number
+    let mut aggregator = StakeAggregator::<QuorumThreshold>::new();
     for parent in block.parents() {
-        if parent.round >= block.reference().round {
-            return false;
+        if parent.round >= round {
+            bail!(
+                "One of parents has round {}, >= block's round {round}",
+                parent.round
+            );
         }
     }
 
-    let mut aggregator = StakeAggregator::<QuorumThreshold>::new();
-    let mut is_quorum = false;
-    // Collect the validators with included blocks at round_number  - 1
+    // Collect the validators with included blocks at round - 1
     for parent in block.parents() {
         if parent.round == previous_round {
-            is_quorum = aggregator.add(parent.author, committee);
+            if aggregator.add(parent.author, committee) {
+                return Ok(());
+            }
         }
     }
 
-    // Ensure the set of validators with includes has a quorum in the current committee
-    is_quorum
+    bail!("Not enough parents for threshold clock quorum")
 }
 
 pub struct ThresholdClockAggregator {

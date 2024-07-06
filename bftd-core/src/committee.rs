@@ -2,6 +2,7 @@ use crate::block::{Block, BlockReference, ChainId, Round, ValidatorIndex, MAX_PA
 use crate::crypto::{Blake2Hasher, Ed25519Verifier};
 use crate::metrics::Metrics;
 use crate::network::{NoisePublicKey, PeerInfo};
+use crate::threshold_clock::verify_threshold_clock;
 use anyhow::{bail, ensure};
 use bytes::Bytes;
 use rand::prelude::SliceRandom;
@@ -87,6 +88,7 @@ impl Committee {
             &self.chain_id == block.chain_id(),
             "Received block from a different chain"
         );
+        verify_threshold_clock(&block, &self)?;
         Ok(BlockVerifiedByCommittee(block))
     }
 
