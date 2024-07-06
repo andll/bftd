@@ -392,6 +392,17 @@ pub trait DagExt: BlockReader + BlockViewStore {
         }
         Some(stake)
     }
+
+    fn fill_block_view(&self, block: &Block, block_view: &mut Vec<Option<BlockReference>>) {
+        for parent in block.parents() {
+            if parent.is_genesis() {
+                continue;
+            }
+            let parent_block_view = self.get_block_view(parent);
+            self.merge_block_view_into(block_view, &parent_block_view);
+            self.merge_block_ref_into(block_view, parent);
+        }
+    }
 }
 
 impl<T: BlockReader + BlockViewStore> DagExt for T {}

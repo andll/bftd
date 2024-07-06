@@ -20,14 +20,7 @@ impl BlockStore for MemoryBlockStore {
     fn put(&self, block: Arc<Block>) {
         let lock = self.inner.upgradable_read();
         let mut block_view = self.genesis_view.clone();
-        for parent in block.parents() {
-            if parent.is_genesis() {
-                continue;
-            }
-            let parent_block_view = lock.get_block_view(parent);
-            lock.merge_block_view_into(&mut block_view, &parent_block_view);
-            lock.merge_block_ref_into(&mut block_view, parent);
-        }
+        lock.fill_block_view(&block, &mut block_view);
 
         let mut lock = RwLockUpgradableReadGuard::upgrade(lock);
         if !block.is_genesis() {
