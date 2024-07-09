@@ -486,10 +486,10 @@ pub trait DagExt: BlockReader + BlockViewStore {
                 );
                 let _enter = span.enter();
                 self.merge_block_view_into(block_view, &parent_block_view);
-                self.merge_block_ref_into(block_view, parent);
             } else {
                 block_view = Some(parent_block_view);
             }
+            self.merge_block_ref_into(block_view.as_mut().unwrap(), parent);
         }
         // todo unwrap_or_else needed because we insert genesis blocks via block_store.put and
         // execute this code path for them (which we should not)
