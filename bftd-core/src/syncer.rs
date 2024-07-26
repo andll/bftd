@@ -189,7 +189,8 @@ impl Syncer {
         let verification_task =
             tokio::spawn(inner.run_verification_task(unverified_block_receiver));
 
-        let block_manager = BlockManager::new(block_store.clone(), metrics.clone());
+        let block_manager =
+            BlockManager::new(block_store.clone(), metrics.clone(), committee.clone());
 
         let syncer = SyncerTask {
             core,
@@ -285,7 +286,13 @@ impl<
                     if let Some(next_proposal_round) = self.core.vector_clock_round() {
                         let check_round = next_proposal_round.previous();
                         // todo use ValidatorSet instead of Vec
-                        let mut wait_leaders = self.committer.get_leaders(check_round);
+                        let wait_leaders = self.committer.get_leaders(check_round);
+                        let mut wait_leaders: HashSet<_> = wait_leaders.into_iter().collect();
+                        // todo - do not wait for leaders with invalidated block view
+                        // todo - double check if we need this
+                        for next_leader in self.committer.get_leaders(check_round.next()) {
+                            wait_leaders.insert(next_leader);
+                        }
                         wait_leaders.retain(|leader| {
                             if self.block_store.get_blocks_at_author_round(*leader, check_round).is_empty() {
                                 if self.rpc.is_connected(self.committee().network_key(*leader)) {
@@ -311,7 +318,7 @@ impl<
                             }
                         } else if !proposal_deadline.is_set() {
                             let deadline = Instant::now().add(self.protocol_config.leader_timeout);
-                            proposal_deadline.set_leaders_deadline(deadline, wait_leaders);
+                            proposal_deadline.set_leaders_deadline(deadline, wait_leaders.into_iter().collect());
                         }
                     }
                     let commits = self.committer.try_commit(self.last_decided, self.last_known_round);

@@ -95,17 +95,18 @@ impl<S: Signer, B: BlockStore + BlockViewStore> Core<S, B> {
     /// Blocks added here must be already stored in BlockStore.
     pub fn add_blocks(&mut self, blocks: &[Arc<Block>]) {
         for b in blocks {
-            self.add_block_to_critical_block_aggregators(b.reference());
             self.proposer_clock
                 .add_block(*b.reference(), &self.committee);
+            self.add_block_to_critical_block_aggregators(b.reference());
         }
         self.parents_accumulator.add_blocks(blocks);
         self.update_critical_blocks();
     }
 
     fn add_block_to_critical_block_aggregators(&mut self, reference: &BlockReference) {
-        for (critical_block, aggregator) in self.critical_blocks.values_mut() {
+        for (proposal_round, (critical_block, aggregator)) in self.critical_blocks.iter_mut() {
             Self::update_critical_block_aggregator(
+                *proposal_round,
                 aggregator,
                 critical_block,
                 reference,
@@ -117,6 +118,7 @@ impl<S: Signer, B: BlockStore + BlockViewStore> Core<S, B> {
     }
 
     fn update_critical_block_aggregator(
+        proposal_round: Round,
         aggregator: &mut StakeAggregator<ValidityThreshold>,
         critical_block: &BlockReference,
         reference: &BlockReference,
@@ -127,12 +129,16 @@ impl<S: Signer, B: BlockStore + BlockViewStore> Core<S, B> {
         if aggregator.contains(reference.author()) {
             return;
         }
+        if reference.round >= proposal_round {
+            return;
+        }
         let block_view = block_store.get_block_view(reference);
         let block_view_round = index
             .slice_get(&block_view)
             .expect("Own block view can not be None")
             .round();
         if block_view_round >= critical_block.round() {
+            log::debug!("Added support from {reference} for critical block {critical_block} for proposal round {proposal_round}");
             aggregator.add(reference.author(), committee);
         }
     }
@@ -151,11 +157,13 @@ impl<S: Signer, B: BlockStore + BlockViewStore> Core<S, B> {
             else {
                 continue;
             };
+            log::debug!("Init critical block aggregator for round {round}, critical block {critical_block}");
             let mut aggregator = StakeAggregator::new();
             for validator in self.committee.enumerate_indexes() {
                 // todo BlockCache support for last_block and last_known_block_view
                 let last_block = self.block_store.last_known_block(validator);
                 Self::update_critical_block_aggregator(
+                    round,
                     &mut aggregator,
                     &critical_block,
                     last_block.reference(),
@@ -163,6 +171,19 @@ impl<S: Signer, B: BlockStore + BlockViewStore> Core<S, B> {
                     self.index,
                     &self.committee,
                 );
+                if let Some(preceding) = last_block.preceding() {
+                    // todo check round of preceding and compare it to round
+                    // todo - check if we actually need this block
+                    Self::update_critical_block_aggregator(
+                        round,
+                        &mut aggregator,
+                        &critical_block,
+                        preceding,
+                        &self.block_store,
+                        self.index,
+                        &self.committee,
+                    );
+                }
             }
             va.insert((critical_block, aggregator));
         }

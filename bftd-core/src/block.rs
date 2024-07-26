@@ -28,7 +28,6 @@ use std::sync::Arc;
    * Block payload matches application-specific format - BlockFilter
    * Correctness against block's sub-dag - BlockManager::check_block_before_adding:
      * time_ns lower bound
-   * TODO:
      * critical block support
 */
 pub struct Block {

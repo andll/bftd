@@ -1,7 +1,8 @@
 use crate::block::{Block, BlockReference};
+use crate::committee::Committee;
 use crate::log_byzantine;
 use crate::metrics::Metrics;
-use crate::store::BlockStore;
+use crate::store::{BlockStore, BlockViewStore, DagExt};
 use anyhow::bail;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
@@ -12,6 +13,7 @@ pub struct BlockManager<S> {
     suspended: HashMap<BlockReference, SuspendedInfo>,
     store: S,
     metrics: Arc<Metrics>,
+    committee: Arc<Committee>,
 }
 
 struct SuspendedInfo {
@@ -32,13 +34,14 @@ pub struct AddBlockResult {
     pub previously_missing: Vec<BlockReference>,
 }
 
-impl<S: BlockStore> BlockManager<S> {
-    pub fn new(store: S, metrics: Arc<Metrics>) -> Self {
+impl<S: BlockStore + BlockViewStore> BlockManager<S> {
+    pub fn new(store: S, metrics: Arc<Metrics>, committee: Arc<Committee>) -> Self {
         Self {
             store,
             missing_inverse: Default::default(),
             suspended: Default::default(),
             metrics,
+            committee,
         }
     }
 
@@ -140,6 +143,7 @@ impl<S: BlockStore> BlockManager<S> {
 
     /// Final verifications when we have all block parents present
     /// - Check block timestamp is equal or higher than parents timestamps
+    /// - Check if critical block for a block has enough support
     fn check_block_before_adding(&self, block: &Arc<Block>) -> anyhow::Result<()> {
         for parent in block.parents() {
             let parent = self.store.get(parent).expect("All parents must be present");
@@ -147,6 +151,14 @@ impl<S: BlockStore> BlockManager<S> {
                 bail!("Block {} failed DAG validation: parent {} has timestamp {}, block timestamp {}",
                     block.reference(), parent.reference(), parent.time_ns(), block.time_ns()
                 );
+            }
+        }
+        let critical_block_support = self.store.critical_block_support(block, &self.committee);
+        if let Some(critical_block_support) = critical_block_support {
+            if critical_block_support < self.committee.f_threshold {
+                let critical_block = self.store.critical_block(block);
+                bail!("Block {} failed DAG validation: critical block {:?} has support {}, minimal requirement is {}",
+                    block.reference(), critical_block, critical_block_support, self.committee.f_threshold);
             }
         }
         Ok(())
