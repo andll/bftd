@@ -106,10 +106,13 @@ impl BlockFetcher {
             }
         }
         for added in &r.added {
-            self.block_received(added.reference());
+            self.abort_fetch_task(added.reference());
+        }
+        for rejected in &r.rejected {
+            self.abort_fetch_task(rejected);
         }
         for suspended in &r.suspended {
-            self.block_received(suspended);
+            self.abort_fetch_task(suspended);
         }
         // Cleanup join set from completed tasks
         while let Some(next) = self.tasks.try_join_next() {
@@ -127,7 +130,7 @@ impl BlockFetcher {
         }
     }
 
-    fn block_received(&mut self, reference: &BlockReference) {
+    fn abort_fetch_task(&mut self, reference: &BlockReference) {
         if let Some(fetch_request) = self.fetch_requests.remove(reference) {
             fetch_request.abort_handle.abort();
         }

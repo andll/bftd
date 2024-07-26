@@ -15,7 +15,7 @@ use std::sync::Arc;
      * reference.hash matches block content
      * parents are specified as a correct vector
      * signature matches block content
-   * Correctness against current the current committee - Committee::verify_block:
+   * Correctness against the current committee - Committee::verify_block:
      * reference.author specified in the block exists in committee
      * signature on the block belongs to reference.author
      * block reference matches source of the block:
@@ -26,8 +26,10 @@ use std::sync::Arc;
      * parents vector clock
    * Block stored locally has all parents - BlockManager
    * Block payload matches application-specific format - BlockFilter
-   * TODO:
+   * Correctness against block's sub-dag - BlockManager::check_block_before_adding:
      * time_ns lower bound
+   * TODO:
+     * critical block support
 */
 pub struct Block {
     /// Reference of the current block

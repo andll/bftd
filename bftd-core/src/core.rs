@@ -225,7 +225,11 @@ impl<S: Signer, B: BlockStore + BlockViewStore> Core<S, B> {
             }
             return true;
         };
-        assert_eq!(Some(*critical_block), critical_block_from_store, "Critical block invariant violation");
+        assert_eq!(
+            Some(*critical_block),
+            critical_block_from_store,
+            "Critical block invariant violation"
+        );
         aggregator.satisfied(&self.committee)
     }
 

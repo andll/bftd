@@ -1,6 +1,8 @@
 use crate::block::{Block, BlockReference};
+use crate::log_byzantine;
 use crate::metrics::Metrics;
 use crate::store::BlockStore;
+use anyhow::bail;
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -22,6 +24,8 @@ pub struct AddBlockResult {
     pub added: Vec<Arc<Block>>,
     /// Blocks that are received but suspended (do not have all parents)
     pub suspended: Vec<BlockReference>,
+    /// Blocks that are rejected due to violations
+    pub rejected: Vec<BlockReference>,
     /// Missing parents references (was not seen before)
     pub new_missing: Vec<BlockReference>,
     /// Missing parents references (either already suspended or referenced by some previously suspended block)
@@ -44,6 +48,7 @@ impl<S: BlockStore> BlockManager<S> {
         let mut previously_missing = Vec::new();
         let mut blocks = HashMap::new();
         let mut suspended = Vec::new();
+        let mut rejected = Vec::new();
         blocks.insert(*block.reference(), block);
         while let Some(block) = blocks.keys().next().copied() {
             let block = blocks.remove(&block).unwrap();
@@ -79,8 +84,17 @@ impl<S: BlockStore> BlockManager<S> {
                         }
                     }
                 }
-                added.push(block.clone());
-                self.store.put(block);
+                if let Err(err) = self.check_block_before_adding(&block) {
+                    log_byzantine!(
+                        "[byzantine] Block {} rejected by block manager: {err}",
+                        block.reference()
+                    );
+                    // todo reject all blocks referenced by the rejected block
+                    rejected.push(*block.reference());
+                } else {
+                    added.push(block.clone());
+                    self.store.put(block);
+                }
             } else {
                 // Suspend block
                 match self.suspended.entry(reference) {
@@ -118,9 +132,24 @@ impl<S: BlockStore> BlockManager<S> {
         AddBlockResult {
             added,
             suspended,
+            rejected,
             new_missing,
             previously_missing,
         }
+    }
+
+    /// Final verifications when we have all block parents present
+    /// - Check block timestamp is equal or higher than parents timestamps
+    fn check_block_before_adding(&self, block: &Arc<Block>) -> anyhow::Result<()> {
+        for parent in block.parents() {
+            let parent = self.store.get(parent).expect("All parents must be present");
+            if parent.time_ns() > block.time_ns() {
+                bail!("Block {} failed DAG validation: parent {} has timestamp {}, block timestamp {}",
+                    block.reference(), parent.reference(), parent.time_ns(), block.time_ns()
+                );
+            }
+        }
+        Ok(())
     }
 
     pub fn flush(&self) {
