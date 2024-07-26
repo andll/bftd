@@ -176,7 +176,7 @@ async fn wait_for_commit(
 pub fn enable_test_logging_smoke_test() {
     use tracing_subscriber::EnvFilter;
     let v = env::var("RUST_LOG").unwrap_or(
-        "bftd_core::rpc=debug,bftd_core::syncer=debug,bftd_core::fetcher=debug".to_string(),
+        "bftd_core::rpc=debug,bftd_core::syncer=debug,bftd_core::core=debug,bftd_core::fetcher=debug".to_string(),
     );
     let env_filter = EnvFilter::builder().parse(v).unwrap();
     tracing_subscriber::fmt()
