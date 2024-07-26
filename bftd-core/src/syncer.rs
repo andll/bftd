@@ -443,7 +443,6 @@ impl<
 
     fn try_make_proposal_for_round(&mut self, round: Round, proposer: &mut P) {
         if !self.core.critical_block_supported(round) {
-            tracing::debug!("Not creating proposal - critical block for round {round} does not have enough support");
             return;
         }
         let proposal = self

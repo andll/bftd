@@ -128,6 +128,13 @@ impl<TH: CommitteeThreshold> StakeAggregator<TH> {
         TH::is_threshold(committee, self.stake)
     }
 
+    pub fn missing(&self, committee: &Committee) -> Vec<ValidatorIndex> {
+        committee
+            .enumerate_indexes()
+            .filter(|vi| !self.votes.contains(*vi))
+            .collect()
+    }
+
     pub fn clear(&mut self) {
         self.votes.clear();
         self.stake = Stake::ZERO;

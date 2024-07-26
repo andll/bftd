@@ -230,7 +230,11 @@ impl<S: Signer, B: BlockStore + BlockViewStore> Core<S, B> {
             critical_block_from_store,
             "Critical block invariant violation"
         );
-        aggregator.satisfied(&self.committee)
+        let satisfied = aggregator.satisfied(&self.committee);
+        if !satisfied {
+            tracing::debug!("Not creating proposal - critical block {critical_block} for round {round} does not have enough support, missing validators {:?}", aggregator.missing(&self.committee));
+        }
+        satisfied
     }
 
     pub fn make_proposal(
