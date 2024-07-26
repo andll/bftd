@@ -2,10 +2,12 @@ use crate::block::{Block, BlockReference, Round, ValidatorIndex};
 use crate::committee::Committee;
 use crate::crypto::{Blake2Hasher, Signer};
 use crate::metrics::Metrics;
-use crate::store::BlockStore;
-use crate::threshold_clock::ThresholdClockAggregator;
+use crate::store::{BlockStore, BlockViewStore, DagExt};
+use crate::threshold_clock::{StakeAggregator, ThresholdClockAggregator, ValidityThreshold};
 use bytes::Bytes;
-use std::collections::BTreeSet;
+use smallvec::SmallVec;
+use std::collections::btree_map::Entry;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
@@ -16,7 +18,10 @@ pub struct Core<S, B> {
     block_store: B,
     proposer_clock: ThresholdClockAggregator,
     committee: Arc<Committee>,
-    last_proposed_round: Round,
+    critical_blocks: BTreeMap<Round, (BlockReference, StakeAggregator<ValidityThreshold>)>,
+    // critical_block: Option<BlockReference>,
+    // critical_block_aggregator: StakeAggregator<ValidityThreshold>,
+    last_proposed_reference: BlockReference,
     index: ValidatorIndex,
     parents_accumulator: ParentsAccumulator,
     metrics: Arc<Metrics>,
@@ -43,7 +48,7 @@ pub trait ProposalMaker: Send + 'static {
     }
 }
 
-impl<S: Signer, B: BlockStore> Core<S, B> {
+impl<S: Signer, B: BlockStore + BlockViewStore> Core<S, B> {
     pub fn new(
         signer: S,
         block_store: B,
@@ -56,11 +61,17 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
             block_store.put(block);
         }
         let mut latest_blocks = Vec::with_capacity(committee.len());
+        let mut last_own_block = None;
         for validator in committee.enumerate_indexes() {
             let last_block = block_store.last_known_block(validator);
+            if validator == index {
+                last_own_block = Some(last_block.clone());
+            }
             latest_blocks.push(last_block);
         }
-        let last_proposed_round = block_store.last_known_round(index);
+        let last_own_block = last_own_block.expect("Must find last own bock");
+        let last_proposed_reference = *last_own_block.reference();
+        let last_proposed_round = last_proposed_reference.round();
         let proposer_clock = ThresholdClockAggregator::new(last_proposed_round);
         // todo recover other nodes for parents accumulator?
         let parents_accumulator = ParentsAccumulator::new(index, &committee);
@@ -69,11 +80,13 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
             block_store,
             proposer_clock,
             committee,
-            last_proposed_round,
+            critical_blocks: Default::default(),
+            last_proposed_reference,
             index,
             parents_accumulator,
             metrics,
         };
+        this.update_critical_blocks();
         this.add_blocks(&latest_blocks);
         this
     }
@@ -82,21 +95,105 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
     /// Blocks added here must be already stored in BlockStore.
     pub fn add_blocks(&mut self, blocks: &[Arc<Block>]) {
         for b in blocks {
+            self.add_block_to_critical_block_aggregators(b.reference());
             self.proposer_clock
                 .add_block(*b.reference(), &self.committee);
         }
         self.parents_accumulator.add_blocks(blocks);
+        self.update_critical_blocks();
+    }
+
+    fn add_block_to_critical_block_aggregators(&mut self, reference: &BlockReference) {
+        for (critical_block, aggregator) in self.critical_blocks.values_mut() {
+            Self::update_critical_block_aggregator(
+                aggregator,
+                critical_block,
+                reference,
+                &self.block_store,
+                self.index,
+                &self.committee,
+            );
+        }
+    }
+
+    fn update_critical_block_aggregator(
+        aggregator: &mut StakeAggregator<ValidityThreshold>,
+        critical_block: &BlockReference,
+        reference: &BlockReference,
+        block_store: &B,
+        index: ValidatorIndex,
+        committee: &Committee,
+    ) {
+        if aggregator.contains(reference.author()) {
+            return;
+        }
+        let block_view = block_store.get_block_view(reference);
+        let block_view_round = index
+            .slice_get(&block_view)
+            .expect("Own block view can not be None")
+            .round();
+        if block_view_round >= critical_block.round() {
+            aggregator.add(reference.author(), committee);
+        }
+    }
+
+    fn update_critical_blocks(&mut self) {
+        let proposal_rounds = self.possible_proposal_rounds();
+        self.critical_blocks
+            .retain(|r, _| proposal_rounds.contains(r));
+        for round in proposal_rounds {
+            let Entry::Vacant(va) = self.critical_blocks.entry(round) else {
+                continue;
+            };
+            let Some(critical_block) = self
+                .block_store
+                .critical_block_for_round(round, &self.last_proposed_reference)
+            else {
+                continue;
+            };
+            let mut aggregator = StakeAggregator::new();
+            for validator in self.committee.enumerate_indexes() {
+                // todo BlockCache support for last_block and last_known_block_view
+                let last_block = self.block_store.last_known_block(validator);
+                Self::update_critical_block_aggregator(
+                    &mut aggregator,
+                    &critical_block,
+                    last_block.reference(),
+                    &self.block_store,
+                    self.index,
+                    &self.committee,
+                );
+            }
+            va.insert((critical_block, aggregator));
+        }
     }
 
     /// returns vector clock round for new proposal
-    /// returns none if vector clock round is below or equal last proposed round
+    /// returns none if vector clock round is below or equal to the last proposed round
     pub fn vector_clock_round(&self) -> Option<Round> {
         let round = self.proposer_clock.get_round();
-        if round > self.last_proposed_round {
+        if round > self.last_proposed_round() {
             Some(round)
         } else {
             None
         }
+    }
+
+    fn possible_proposal_rounds(&self) -> SmallVec<[Round; 2]> {
+        let round = self.vector_clock_round();
+        let mut rounds = SmallVec::new();
+        let Some(round) = round else {
+            return rounds;
+        };
+
+        let previous = round.previous();
+        if previous > self.last_proposed_round() {
+            // todo - consult with commit rule if we need previous round
+            rounds.push(previous);
+        }
+        rounds.push(round);
+
+        rounds
     }
 
     pub fn missing_validators_for_proposal(&self) -> Vec<ValidatorIndex> {
@@ -110,7 +207,26 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
     }
 
     pub fn last_proposed_round(&self) -> Round {
-        self.last_proposed_round
+        self.last_proposed_reference.round
+    }
+
+    pub fn critical_block_supported(&self, round: Round) -> bool {
+        let possible_proposal_rounds = self.possible_proposal_rounds();
+        if !possible_proposal_rounds.contains(&round) {
+            panic!("critical_block_supported invariant violation on round {round}: possible_proposal_rounds: {possible_proposal_rounds:?}, round: {round}");
+        }
+        let critical_block_from_store = self
+            .block_store
+            .critical_block_for_round(round, &self.last_proposed_reference);
+        let critical_block = self.critical_blocks.get(&round);
+        let Some((critical_block, aggregator)) = critical_block else {
+            if let Some(critical_block_from_store) = critical_block_from_store {
+                panic!("critical_block_supported invariant violation on round {round} - critical_block_from_store({critical_block_from_store}), no critical block aggregator");
+            }
+            return true;
+        };
+        assert_eq!(Some(*critical_block), critical_block_from_store, "Critical block invariant violation");
+        aggregator.satisfied(&self.committee)
     }
 
     pub fn make_proposal(
@@ -120,7 +236,7 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
         time_ns: u64,
     ) -> Arc<Block> {
         assert!(round <= self.proposer_clock.get_round());
-        assert!(round > self.last_proposed_round);
+        assert!(round > self.last_proposed_round());
         let payload = proposal_maker.make_proposal();
         let parents = self.parents_accumulator.take_parents(round);
         let block = Block::new(
@@ -138,7 +254,8 @@ impl<S: Signer, B: BlockStore> Core<S, B> {
         self.block_store.put(block.clone());
         self.block_store.flush();
         self.add_blocks(&[block.clone()]);
-        self.last_proposed_round = round;
+        self.last_proposed_reference = *block.reference();
+        self.update_critical_blocks();
         self.metrics.core_last_proposed_round.set(round.0 as i64);
         self.metrics
             .core_last_proposed_block_size

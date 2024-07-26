@@ -277,10 +277,16 @@ mod tests {
         store.put(a2.clone());
         store.put(b!("B2", ["B0", "A1", "C0"]));
         assert_eq!(store.critical_block(&a2), Some(br!("A0")));
-        assert_eq!(store.critical_block_links(&a2, &committee), Some(Stake(1)));
+        assert_eq!(
+            store.critical_block_support(&a2, &committee),
+            Some(Stake(1))
+        );
         let a3 = b!("A3", ["A2", "B2", "C0"]);
         store.put(a3.clone());
         assert_eq!(store.critical_block(&a3), Some(br!("A1")));
-        assert_eq!(store.critical_block_links(&a3, &committee), Some(Stake(2)));
+        assert_eq!(
+            store.critical_block_support(&a3, &committee),
+            Some(Stake(2))
+        );
     }
 }

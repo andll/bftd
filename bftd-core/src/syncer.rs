@@ -12,7 +12,7 @@ use crate::protocol_config::ProtocolConfig;
 use crate::rpc::{
     NetworkRequest, NetworkResponse, NetworkRpc, NetworkRpcRouter, PeerRpcTaskCommand, RpcResult,
 };
-use crate::store::{BlockReader, BlockStore};
+use crate::store::{BlockReader, BlockStore, BlockViewStore};
 use crate::store::{CommitInterpreter, CommitStore};
 use anyhow::bail;
 use bytes::Bytes;
@@ -115,7 +115,7 @@ pub struct SystemTimeClock {
 impl Syncer {
     pub fn start<
         S: Signer,
-        B: BlockStore + CommitStore + Clone,
+        B: BlockStore + BlockViewStore + CommitStore + Clone,
         C: Clock + Clone,
         P: ProposalMaker,
         F: BlockFilter,
@@ -232,8 +232,12 @@ impl Syncer {
     }
 }
 
-impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
-    SyncerTask<S, B, C, P>
+impl<
+        S: Signer,
+        B: BlockStore + CommitStore + BlockViewStore + Clone,
+        C: Clock,
+        P: ProposalMaker,
+    > SyncerTask<S, B, C, P>
 {
     const STALL_TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -424,19 +428,24 @@ impl<S: Signer, B: BlockStore + CommitStore + Clone, C: Clock, P: ProposalMaker>
         let Some(round) = round else {
             return;
         };
+
         let previous = round.previous();
         if previous > self.core.last_proposed_round() {
             if self
                 .committer
                 .is_leader(previous, self.core.validator_index())
             {
-                self.make_proposal_for_round(previous, proposer);
+                self.try_make_proposal_for_round(previous, proposer);
             }
         }
-        self.make_proposal_for_round(round, proposer);
+        self.try_make_proposal_for_round(round, proposer);
     }
 
-    fn make_proposal_for_round(&mut self, round: Round, proposer: &mut P) {
+    fn try_make_proposal_for_round(&mut self, round: Round, proposer: &mut P) {
+        if !self.core.critical_block_supported(round) {
+            tracing::debug!("Not creating proposal - critical block for round {round} does not have enough support");
+            return;
+        }
         let proposal = self
             .core
             .make_proposal(proposer, round, self.clock.time_ns());

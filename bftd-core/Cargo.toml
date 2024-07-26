@@ -25,6 +25,7 @@ seahash = "4.1.0"
 tracing = "0.1.40"
 prometheus = "0.13.4"
 rocksdb = { version = "0.22.0"}
+smallvec = "1.13.2"
 
 [dev-dependencies]
 tempdir = "0.3.7"

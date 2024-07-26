@@ -120,11 +120,8 @@ impl Committee {
             .map(|(i, vi)| (ValidatorIndex(i as u64), vi))
     }
 
-    pub fn enumerate_indexes(&self) -> impl Iterator<Item = ValidatorIndex> + '_ {
-        self.validators
-            .iter()
-            .enumerate()
-            .map(|(i, _)| ValidatorIndex(i as u64))
+    pub fn enumerate_indexes(&self) -> impl Iterator<Item = ValidatorIndex> {
+        (0..self.validators.len()).map(|i| ValidatorIndex(i as u64))
     }
 
     /// Returns vec![T::default(); committee::len()]

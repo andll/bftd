@@ -117,6 +117,14 @@ impl<TH: CommitteeThreshold> StakeAggregator<TH> {
         if self.votes.insert(vote) {
             self.stake += stake;
         }
+        self.satisfied(committee)
+    }
+
+    pub fn contains(&self, vote: ValidatorIndex) -> bool {
+        self.votes.contains(vote)
+    }
+
+    pub fn satisfied(&self, committee: &Committee) -> bool {
         TH::is_threshold(committee, self.stake)
     }
 

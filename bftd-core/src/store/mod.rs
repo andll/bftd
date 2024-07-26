@@ -433,12 +433,12 @@ pub trait DagExt: BlockReader + BlockViewStore {
         }
     }
 
-    /// Evaluates total stoke that links from given block to its critical block.
+    /// Evaluates total stake that links from given block to its critical block.
     /// Returns None if block does not have a critical block (block is among very early blocks in epoch).
     ///
     /// Provided block does not need to be inserted in block store,
     /// but all its parents should already be in the block store.
-    fn critical_block_links(&self, block: &Block, committee: &Committee) -> Option<Stake> {
+    fn critical_block_support(&self, block: &Block, committee: &Committee) -> Option<Stake> {
         let critical_block = self.critical_block(block)?;
         let author = block.author();
         let mut stake = Stake::ZERO;
