@@ -1,4 +1,4 @@
-use crate::block::{Block, BlockReference, ChainId, Round, ValidatorIndex, MAX_PARENTS};
+use crate::block::{Block, BlockReference, ChainId, ValidatorIndex, MAX_PARENTS};
 use crate::crypto::{Blake2Hasher, Ed25519Verifier};
 use crate::metrics::Metrics;
 use crate::network::{NoisePublicKey, PeerInfo};
@@ -9,7 +9,6 @@ use rand::prelude::SliceRandom;
 use rand::rngs::ThreadRng;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::hash::{Hash, Hasher};
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::ops::AddAssign;
 use std::sync::Arc;
@@ -149,13 +148,11 @@ impl Committee {
             .collect()
     }
 
-    pub fn elect_leader(&self, round: Round, offset: u64) -> ValidatorIndex {
-        let mut h = seahash::SeaHasher::new();
-        round.hash(&mut h);
-        offset.hash(&mut h);
-        let h = h.finish();
-        let index = h % (self.validators.len() as u64);
-        ValidatorIndex(index)
+    pub fn enumerate_stakes(&self) -> impl Iterator<Item = (ValidatorIndex, Stake)> + '_ {
+        self.validators
+            .iter()
+            .enumerate()
+            .map(|(i, vi)| (ValidatorIndex(i as u64), vi.stake))
     }
 
     pub fn make_peers_info(&self) -> Vec<PeerInfo> {

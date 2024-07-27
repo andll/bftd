@@ -6,6 +6,7 @@ use crate::block::{
 };
 use crate::committee::Committee;
 use crate::committee::Stake;
+use crate::consensus::universal_committer::LeaderElection;
 use crate::store::BlockReader;
 use crate::threshold_clock::{QuorumThreshold, StakeAggregator};
 use std::collections::HashMap;
@@ -27,6 +28,8 @@ pub struct BaseCommitterOptions {
     /// The offset of the first wave. This is used by the pipelined committer to ensure that each
     /// [`BaseCommitter`] instances operates on a different view of the dag.
     pub round_offset: u64,
+    /// Leader election mechanism to use
+    pub leader_election: LeaderElection,
 }
 
 impl Default for BaseCommitterOptions {
@@ -35,11 +38,12 @@ impl Default for BaseCommitterOptions {
             wave_length: DEFAULT_WAVE_LENGTH,
             leader_offset: 0,
             round_offset: 0,
+            leader_election: LeaderElection::MultiLeader(1),
         }
     }
 }
 
-/// The [`BaseCommitter`] contains the bare bone commit logic. Once instantiated, the method `try_direct_decide`
+/// The [`BaseCommitter`] contains the bare-bone commit logic. Once instantiated, the method `try_direct_decide`
 /// and `try_indirect_decide` can be called at any time and any number of times (it is idempotent) to determine
 /// whether a leader can be committed or skipped.
 pub struct BaseCommitter<B> {
@@ -95,14 +99,16 @@ impl<B: BlockReader> BaseCommitter<B> {
 
         let offset = self.options.leader_offset;
         Some(AuthorRound::new(
-            self.committee.elect_leader(round, offset),
+            self.options
+                .leader_election
+                .elect_leader(&self.committee, round, offset),
             round,
         ))
     }
 
     /// Find which block is supported at (author, round) by the given block.
     /// Blocks can indirectly reference multiple other blocks at (author, round), but only one block at
-    /// (author, round)  will be supported by the given block. If block A supports B at (author, round),
+    /// (author, round) will be supported by the given block. If block A supports B at (author, round),
     /// it is guaranteed that any processed block by the same author that directly or indirectly parents
     /// A will also support B at (author, round).
     fn find_support(&self, author_round: AuthorRound, from: &Arc<Block>) -> Option<BlockReference> {

@@ -21,7 +21,6 @@ blake2 = "0.10.6"
 ed25519-consensus = "2.1.0"
 thiserror = "1.0.42"
 rand = "0.8.5"
-seahash = "4.1.0"
 tracing = "0.1.40"
 prometheus = "0.13.4"
 rocksdb = { version = "0.22.0"}

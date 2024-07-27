@@ -6,6 +6,8 @@ use crate::committee::Committee;
 use crate::consensus::base_committer::BaseCommitterOptions;
 use crate::metrics::Metrics;
 use crate::store::BlockReader;
+use rand::prelude::{SliceRandom, StdRng};
+use rand::SeedableRng;
 use std::{collections::VecDeque, sync::Arc};
 
 use super::{base_committer::BaseCommitter, CommitDecision, LeaderStatus, DEFAULT_WAVE_LENGTH};
@@ -15,6 +17,7 @@ use super::{base_committer::BaseCommitter, CommitDecision, LeaderStatus, DEFAULT
 /// multi-leaders, backup leaders, and pipelines.
 pub struct UniversalCommitter<B> {
     committers: Vec<BaseCommitter<B>>,
+    leader_election: LeaderElection,
     metrics: Arc<Metrics>,
 }
 
@@ -101,8 +104,14 @@ pub struct UniversalCommitterBuilder<B> {
     block_store: B,
     metrics: Arc<Metrics>,
     wave_length: u64,
-    number_of_leaders: u64,
+    leader_election: LeaderElection,
     pipeline: bool,
+}
+
+#[derive(Clone, Debug)]
+pub enum LeaderElection {
+    All,
+    MultiLeader(u64),
 }
 
 impl<B: BlockReader + Clone> UniversalCommitterBuilder<B> {
@@ -112,7 +121,7 @@ impl<B: BlockReader + Clone> UniversalCommitterBuilder<B> {
             block_store,
             metrics,
             wave_length: DEFAULT_WAVE_LENGTH,
-            number_of_leaders: 1,
+            leader_election: LeaderElection::All,
             pipeline: false,
         }
     }
@@ -124,7 +133,13 @@ impl<B: BlockReader + Clone> UniversalCommitterBuilder<B> {
     }
 
     pub fn with_number_of_leaders(mut self, number_of_leaders: u64) -> Self {
-        self.number_of_leaders = number_of_leaders;
+        assert!(number_of_leaders < self.committee.len() as u64);
+        self.leader_election = LeaderElection::MultiLeader(number_of_leaders);
+        self
+    }
+
+    pub fn with_all_leaders(mut self) -> Self {
+        self.leader_election = LeaderElection::All;
         self
     }
 
@@ -137,11 +152,12 @@ impl<B: BlockReader + Clone> UniversalCommitterBuilder<B> {
         let mut committers = Vec::new();
         let pipeline_stages = if self.pipeline { self.wave_length } else { 1 };
         for round_offset in 0..pipeline_stages {
-            for leader_offset in 0..self.number_of_leaders {
+            for leader_offset in 0..self.num_leaders() {
                 let options = BaseCommitterOptions {
                     wave_length: self.wave_length,
                     round_offset,
                     leader_offset,
+                    leader_election: self.leader_election.clone(),
                 };
                 let committer =
                     BaseCommitter::new(self.committee.clone(), self.block_store.clone())
@@ -152,7 +168,46 @@ impl<B: BlockReader + Clone> UniversalCommitterBuilder<B> {
 
         UniversalCommitter {
             committers,
+            leader_election: self.leader_election,
             metrics: self.metrics,
         }
+    }
+
+    fn num_leaders(&self) -> u64 {
+        self.leader_election.num_leaders(&self.committee)
+    }
+}
+
+impl LeaderElection {
+    pub fn num_leaders(&self, committee: &Committee) -> u64 {
+        match self {
+            LeaderElection::All => committee.len() as u64,
+            LeaderElection::MultiLeader(n) => *n,
+        }
+    }
+
+    pub fn elect_leader(&self, committee: &Committee, round: Round, offset: u64) -> ValidatorIndex {
+        match self {
+            LeaderElection::All => ValidatorIndex(offset),
+            LeaderElection::MultiLeader(n) => {
+                Self::elect_leader_multi_leader(*n, committee, round, offset)
+            }
+        }
+    }
+
+    fn elect_leader_multi_leader(
+        n: u64,
+        committee: &Committee,
+        round: Round,
+        offset: u64,
+    ) -> ValidatorIndex {
+        let mut seed_bytes = [0u8; 32];
+        seed_bytes[32 - 8..].copy_from_slice(&round.0.to_le_bytes());
+        let mut rng = StdRng::from_seed(seed_bytes);
+        let stakes: Vec<_> = committee.enumerate_stakes().collect();
+        let choice = stakes
+            .choose_multiple_weighted(&mut rng, n as usize, |(_, s)| s.0 as f64)
+            .unwrap();
+        choice.skip(offset as usize).next().unwrap().0
     }
 }
