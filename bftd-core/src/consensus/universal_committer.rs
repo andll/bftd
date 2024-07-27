@@ -134,7 +134,6 @@ impl<B: BlockReader + Clone> UniversalCommitterBuilder<B> {
         }
     }
 
-    #[allow(dead_code)]
     pub fn with_wave_length(mut self, wave_length: u64) -> Self {
         self.wave_length = wave_length;
         self
