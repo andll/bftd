@@ -122,6 +122,7 @@ fn start_smoke_test_cluster(dir: PathBuf, num_peers: usize, base_port: usize) ->
         None,
         |_| None,
         ProtocolConfig::default(),
+        None,
     );
     cluster.store_into(&dir, None).unwrap();
     TestCluster::start_test_cluster(dir).unwrap()
@@ -143,6 +144,7 @@ fn start_smoke_test_cluster_partially(
         None,
         |_| None,
         ProtocolConfig::default(),
+        None,
     );
     cluster.store_into(&dir, None).unwrap();
     let to_start = (0..start_up_to).collect();

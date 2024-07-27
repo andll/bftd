@@ -60,20 +60,18 @@ impl Node {
         })
     }
 
-    pub fn start(self, load_gen: Option<LoadGenConfig>) -> anyhow::Result<NodeHandle> {
+    pub fn start(self) -> anyhow::Result<NodeHandle> {
         let runtime = runtime::Builder::new_multi_thread()
             .enable_all()
             .thread_name(format!("{}", self.config.validator_index))
             .build()
             .unwrap();
         let runtime = Arc::new(runtime);
-        runtime.block_on(self.start_inner(runtime.clone(), load_gen))
+        runtime.block_on(self.start_inner(runtime.clone()))
     }
-    async fn start_inner(
-        self,
-        runtime: Arc<Runtime>,
-        load_gen: Option<LoadGenConfig>,
-    ) -> anyhow::Result<NodeHandle> {
+    async fn start_inner(self, runtime: Arc<Runtime>) -> anyhow::Result<NodeHandle> {
+        let load_gen = self.config.load_gen.map(|c| LoadGenConfig::parse(&c));
+        let load_gen = load_gen.transpose()?;
         let committee = self.genesis.make_committee();
         let peers = committee.make_peers_info();
         let bind = if let Some(bind) = self.config.bind.as_ref() {

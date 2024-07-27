@@ -1,5 +1,4 @@
 use crate::config::BftdConfig;
-use crate::load_gen::LoadGenConfig;
 use crate::node::{Node, NodeHandle};
 use bftd_core::block::ValidatorIndex;
 use bftd_core::committee::{Stake, ValidatorInfo};
@@ -30,6 +29,7 @@ impl TestCluster {
         prometheus_bind: Option<SocketAddr>,
         http_server_bind: impl Fn(ValidatorIndex) -> Option<SocketAddr>,
         protocol_config: ProtocolConfig,
+        load_gen: Option<String>,
     ) -> Self {
         let mut rng = ThreadRng::default();
         let (protocol_private_keys, protocol_public_keys): (Vec<_>, Vec<_>) = peer_addresses
@@ -48,6 +48,7 @@ impl TestCluster {
                 validator_index,
                 prometheus_bind,
                 http_server_bind: http_server_bind(validator_index),
+                load_gen: load_gen.clone(),
             };
             configs.push(config);
         }
@@ -135,7 +136,7 @@ impl TestCluster {
         }
         let mut handles = Vec::with_capacity(nodes.len());
         for node in nodes {
-            let handle = node.start(None)?;
+            let handle = node.start()?;
             handles.push(handle);
         }
         Ok(handles)
@@ -150,13 +151,11 @@ impl TestCluster {
     }
 }
 
-pub fn start_node(path: PathBuf, load_gen: Option<String>) -> anyhow::Result<NodeHandle> {
-    let load_gen = load_gen.map(|c| LoadGenConfig::parse(&c));
-    let load_gen = load_gen.transpose()?;
+pub fn start_node(path: PathBuf) -> anyhow::Result<NodeHandle> {
     let genesis = Genesis::load(fs::read(TestCluster::genesis_path(&path))?.into())?;
     let genesis = Arc::new(genesis);
     let node = Node::load(&path, genesis)?;
-    let handle = node.start(load_gen)?;
+    let handle = node.start()?;
     Ok(handle)
 }
 

@@ -9,4 +9,4 @@ Restart=no
 User=ubuntu
 Environment=RUST_LOG=bftd=info
 WorkingDirectory=/home/ubuntu/bftd
-ExecStart=/home/ubuntu/bftd/target/release/bftd run /home/ubuntu/data/ --load-gen 512
+ExecStart=/home/ubuntu/bftd/target/release/bftd run /home/ubuntu/data/

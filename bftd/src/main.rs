@@ -79,6 +79,11 @@ struct NewChainArgs {
     leader_timeout_ms: Option<u64>,
     #[arg(long, short = 'e', num_args = 0..=1, default_missing_value = Some(""), help ="Empty commit timeout allows to slow down empty blocks generation if there is nothing to propose or commit. Specify this argument without value to generate empty commit timeout automatically based on leader timeout. If argument is not specified empty commit timeout feature is not used and blocks are generated as fast as possible.")]
     empty_commit_timeout_ms: Option<String>,
+    #[arg(
+        long,
+        help = "Load gen parameters in form of transaction_size[::tps_limit]"
+    )]
+    load_gen: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -91,8 +96,6 @@ struct LocalClusterArgs {
 #[derive(Parser, Debug)]
 struct RunArgs {
     dir: PathBuf,
-    #[arg(long, short = 'l')]
-    load_gen: Option<String>,
 }
 
 fn main() {
@@ -181,6 +184,7 @@ fn handle_new_chain(args: NewChainArgs) -> anyhow::Result<()> {
         args.prometheus_bind,
         http_server_bind,
         protocol_config.build(),
+        args.load_gen,
     );
     println!("Storing test cluster into {path:?}");
     test_cluster.store_into(&path, args.prometheus_template)?;
@@ -201,7 +205,7 @@ fn handle_local_cluster(args: LocalClusterArgs) -> anyhow::Result<()> {
 }
 
 fn handle_run(args: RunArgs) -> anyhow::Result<()> {
-    let _handle = start_node(args.dir, args.load_gen)?;
+    let _handle = start_node(args.dir)?;
     thread::park();
     Ok(())
 }
