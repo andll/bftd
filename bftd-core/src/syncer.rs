@@ -90,6 +90,11 @@ const BLOCKS_CHANNEL_CAPACITY: usize = 2048;
 pub trait Clock: Send + Sync + 'static {
     /// Current timestamp in nanoseconds
     fn time_ns(&self) -> u64;
+
+    /// Current timestamp as duration
+    fn time(&self) -> Duration {
+        Duration::from_nanos(self.time_ns())
+    }
 }
 
 /// Application-specific filtering of block payload.
@@ -728,6 +733,13 @@ impl Clock for SystemTimeClock {
         // little trick to avoid syscall every time we want to get timestamp
         // todo - synchronize with actual time sometimes?
         self.start_timestamp + self.start.elapsed().as_nanos() as u64
+    }
+}
+
+// Test implementation returning constant value
+impl Clock for u64 {
+    fn time_ns(&self) -> u64 {
+        *self
     }
 }
 
