@@ -81,6 +81,11 @@ struct NewChainArgs {
     empty_commit_timeout_ms: Option<String>,
     #[arg(
         long,
+        help = "Enables or disables critical_block_check protocol config. Enabled by default"
+    )]
+    critical_block_check: Option<bool>,
+    #[arg(
+        long,
         help = "Load gen parameters in form of transaction_size[::tps_limit]"
     )]
     load_gen: Option<String>,
@@ -165,6 +170,17 @@ fn handle_new_chain(args: NewChainArgs) -> anyhow::Result<()> {
             "Using empty commit timeout {} ms",
             protocol_config.empty_commit_timeout().as_millis()
         );
+    }
+    if let Some(critical_block_check) = args.critical_block_check {
+        println!(
+            "Critical block check manually {}",
+            if critical_block_check {
+                "enabled"
+            } else {
+                "disabled"
+            }
+        );
+        protocol_config.with_critical_block_check(critical_block_check);
     }
     let http_server_bind = |vi: ValidatorIndex| {
         if let Some(bind) = args.http_server_bind {
