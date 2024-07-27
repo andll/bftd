@@ -153,11 +153,13 @@ impl<S: Signer, B: BlockStore + BlockViewStore> Core<S, B> {
             };
             let Some(critical_block) = self
                 .block_store
-                .critical_block_for_round(round, &self.last_proposed_reference)
+                .critical_block_for_round(round, self.last_proposed_reference)
             else {
                 continue;
             };
-            log::debug!("Init critical block aggregator for round {round}, critical block {critical_block}");
+            log::debug!(
+                "Init critical block aggregator for round {round}, critical block {critical_block}"
+            );
             let mut aggregator = StakeAggregator::new();
             for validator in self.committee.enumerate_indexes() {
                 // todo BlockCache support for last_block and last_known_block_view
@@ -231,6 +233,10 @@ impl<S: Signer, B: BlockStore + BlockViewStore> Core<S, B> {
         self.last_proposed_reference.round
     }
 
+    pub fn last_proposed_reference(&self) -> &BlockReference {
+        &self.last_proposed_reference
+    }
+
     pub fn critical_block_supported(&self, round: Round) -> bool {
         let possible_proposal_rounds = self.possible_proposal_rounds();
         if !possible_proposal_rounds.contains(&round) {
@@ -238,7 +244,7 @@ impl<S: Signer, B: BlockStore + BlockViewStore> Core<S, B> {
         }
         let critical_block_from_store = self
             .block_store
-            .critical_block_for_round(round, &self.last_proposed_reference);
+            .critical_block_for_round(round, self.last_proposed_reference);
         let critical_block = self.critical_blocks.get(&round);
         let Some((critical_block, aggregator)) = critical_block else {
             if let Some(critical_block_from_store) = critical_block_from_store {

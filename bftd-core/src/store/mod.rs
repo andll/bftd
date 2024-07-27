@@ -415,7 +415,7 @@ pub trait DagExt: BlockReader + BlockViewStore {
     /// Evaluates critical block for the given block
     fn critical_block(&self, block: &Block) -> Option<BlockReference> {
         let preceding = block.preceding()?;
-        self.critical_block_for_round(block.round(), preceding)
+        self.critical_block_for_round(block.round(), *preceding)
     }
 
     /// Evaluate what would be a critical block for a block
@@ -423,14 +423,17 @@ pub trait DagExt: BlockReader + BlockViewStore {
     fn critical_block_for_round(
         &self,
         round: Round,
-        preceding: &BlockReference,
+        mut preceding: BlockReference,
     ) -> Option<BlockReference> {
-        if preceding.round() == round.previous() {
-            let preceding = self.get(preceding).expect("Parent block not found");
-            Some(*preceding.preceding()?)
-        } else {
-            Some(*preceding)
+        assert!(round >= preceding.round());
+        const CRITICAL_BLOCK_GAP: u64 = 2;
+        while round.0 - preceding.round().0 < CRITICAL_BLOCK_GAP {
+            preceding = *self
+                .get(&preceding)
+                .expect("Preceding block not found")
+                .preceding()?;
         }
+        Some(preceding)
     }
 
     /// Evaluates total stake that links from given block to its critical block.
@@ -438,7 +441,11 @@ pub trait DagExt: BlockReader + BlockViewStore {
     ///
     /// Provided block does not need to be inserted in block store,
     /// but all its parents should already be in the block store.
-    fn critical_block_support(&self, block: &Block, committee: &Committee) -> Option<Stake> {
+    fn critical_block_support(
+        &self,
+        block: &Block,
+        committee: &Committee,
+    ) -> Option<(BlockReference, Stake)> {
         let critical_block = self.critical_block(block)?;
         let author = block.author();
         let mut stake = Stake::ZERO;
@@ -454,7 +461,34 @@ pub trait DagExt: BlockReader + BlockViewStore {
                 }
             }
         }
-        Some(stake)
+        Some((critical_block, stake))
+    }
+
+    fn print_dag(&self, block: &Block, limit: usize) -> String {
+        let mut seen = HashSet::with_capacity(128);
+        let mut out = String::with_capacity(4 * 1024);
+        self.print_dag_inner(block, limit, &mut seen, &mut out);
+        out
+    }
+
+    fn print_dag_inner(
+        &self,
+        block: &Block,
+        limit: usize,
+        seen: &mut HashSet<BlockReference>,
+        out: &mut String,
+    ) {
+        use std::fmt::Write;
+        writeln!(out, "{block}").unwrap();
+        if limit == 0 {
+            return;
+        }
+        for parent in block.parents() {
+            if seen.insert(*parent) {
+                let parent = self.get(parent).expect("Parent block not found");
+                self.print_dag_inner(&parent, limit - 1, seen, out);
+            }
+        }
     }
 
     fn fill_block_view(

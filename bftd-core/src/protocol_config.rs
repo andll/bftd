@@ -14,6 +14,7 @@ pub struct ProtocolConfig {
     ///
     /// This timeout plays no role if ProposalMaker::proposal_waiter always returns None.
     pub(crate) empty_commit_timeout: Duration,
+    pub(crate) critical_block_check: bool,
 }
 
 impl Default for ProtocolConfig {
@@ -21,6 +22,7 @@ impl Default for ProtocolConfig {
         Self {
             leader_timeout: Duration::from_secs(2),
             empty_commit_timeout: Duration::ZERO,
+            critical_block_check: true,
         }
     }
 }
@@ -48,6 +50,10 @@ impl ProtocolConfigBuilder {
 
     pub fn with_recommended_empty_commit_timeout(&mut self) {
         self.0.empty_commit_timeout = self.0.leader_timeout / 2;
+    }
+
+    pub fn with_critical_block_check(&mut self, b: bool) {
+        self.0.critical_block_check = b;
     }
 
     pub fn empty_commit_timeout(&self) -> Duration {

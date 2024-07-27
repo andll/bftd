@@ -6,6 +6,8 @@ use std::time::Instant;
 
 pub struct Metrics {
     pub block_manager_missing_inverse_len: IntGauge,
+    pub block_manager_added: IntCounter,
+    pub block_manager_rejected: IntCounter,
 
     pub blocks_loaded: IntGauge,
     pub blocks_loaded_bytes: IntGauge,
@@ -75,6 +77,8 @@ impl Metrics {
                 "block_manager_missing_inverse_len",
                 registry
             ),
+            block_manager_added: counter!("block_manager_added", registry),
+            block_manager_rejected: counter!("block_manager_rejected", registry),
 
             blocks_loaded: gauge!("blocks_loaded", registry),
             blocks_loaded_bytes: gauge!("blocks_loaded_bytes", registry),

@@ -279,14 +279,14 @@ mod tests {
         assert_eq!(store.critical_block(&a2), Some(br!("A0")));
         assert_eq!(
             store.critical_block_support(&a2, &committee),
-            Some(Stake(1))
+            Some((br!("A0"), Stake(1)))
         );
         let a3 = b!("A3", ["A2", "B2", "C0"]);
         store.put(a3.clone());
         assert_eq!(store.critical_block(&a3), Some(br!("A1")));
         assert_eq!(
             store.critical_block_support(&a3, &committee),
-            Some(Stake(2))
+            Some((br!("A1"), Stake(2)))
         );
     }
 }

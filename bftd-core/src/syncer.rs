@@ -12,7 +12,7 @@ use crate::protocol_config::ProtocolConfig;
 use crate::rpc::{
     NetworkRequest, NetworkResponse, NetworkRpc, NetworkRpcRouter, PeerRpcTaskCommand, RpcResult,
 };
-use crate::store::{BlockReader, BlockStore, BlockViewStore};
+use crate::store::{BlockReader, BlockStore, BlockViewStore, DagExt};
 use crate::store::{CommitInterpreter, CommitStore};
 use anyhow::bail;
 use bytes::Bytes;
@@ -189,8 +189,12 @@ impl Syncer {
         let verification_task =
             tokio::spawn(inner.run_verification_task(unverified_block_receiver));
 
-        let block_manager =
-            BlockManager::new(block_store.clone(), metrics.clone(), committee.clone());
+        let block_manager = BlockManager::new(
+            block_store.clone(),
+            metrics.clone(),
+            committee.clone(),
+            protocol_config.clone(),
+        );
 
         let syncer = SyncerTask {
             core,
@@ -286,15 +290,14 @@ impl<
                     if let Some(next_proposal_round) = self.core.vector_clock_round() {
                         let check_round = next_proposal_round.previous();
                         // todo use ValidatorSet instead of Vec
-                        let wait_leaders = self.committer.get_leaders(check_round);
-                        let mut wait_leaders: HashSet<_> = wait_leaders.into_iter().collect();
-                        // todo - do not wait for leaders with invalidated block view
-                        // todo - double check if we need this
-                        for next_leader in self.committer.get_leaders(check_round.next()) {
-                            wait_leaders.insert(next_leader);
-                        }
+                        // let mut wait_leaders = self.committer.get_leaders(check_round);
+                        let mut wait_leaders: Vec<_> = self.committee().enumerate_indexes().collect();
                         wait_leaders.retain(|leader| {
-                            if self.block_store.get_blocks_at_author_round(*leader, check_round).is_empty() {
+                            if *leader == self.core.validator_index() {
+                                return false; // not waiting for self
+                            }
+                            // todo - cache this value
+                            if self.block_store.last_known_round(*leader) < check_round {
                                 if self.rpc.is_connected(self.committee().network_key(*leader)) {
                                     tracing::debug!("Not ready to make proposal, missing {}{}", leader, check_round);
                                     true
@@ -316,9 +319,16 @@ impl<
                                 let deadline = Instant::now().add(self.protocol_config.leader_timeout);
                                 proposal_deadline.set_payload_deadline(deadline)
                             }
-                        } else if !proposal_deadline.is_set() {
-                            let deadline = Instant::now().add(self.protocol_config.leader_timeout);
-                            proposal_deadline.set_leaders_deadline(deadline, wait_leaders.into_iter().collect());
+                        } else {
+                            let previous = next_proposal_round.previous();
+                            if previous > self.core.last_proposed_round() {
+                                // todo check if leader
+                                self.try_make_proposal_for_round(previous, &mut proposer);
+                            }
+                            if !proposal_deadline.is_set() {
+                                let deadline = Instant::now().add(self.protocol_config.leader_timeout);
+                                proposal_deadline.set_leaders_deadline(deadline, wait_leaders.into_iter().collect());
+                            }
                         }
                     }
                     let commits = self.committer.try_commit(self.last_decided, self.last_known_round);
@@ -351,7 +361,8 @@ impl<
                     if !proposal_deadline.is_set_for_payload() {
                         let timeouts: Vec<_> = proposal_deadline.waiting_validators.as_ref().unwrap().iter().map(|l|AuthorRound::new(*l, waiting_round)).collect();
                         self.metrics.syncer_leader_timeouts.inc();
-                        tracing::warn!("Leader timeout {timeouts:?}");
+                        let dag = self.block_store.print_dag(&self.block_store.get(self.core.last_proposed_reference()).unwrap(), 6);
+                        tracing::warn!("Leader timeout {timeouts:?}. Dag: {dag}");
                     }
                     self.try_make_proposal(&mut proposer);
                     proposal_deadline.reset();
@@ -438,12 +449,12 @@ impl<
 
         let previous = round.previous();
         if previous > self.core.last_proposed_round() {
-            if self
-                .committer
-                .is_leader(previous, self.core.validator_index())
-            {
-                self.try_make_proposal_for_round(previous, proposer);
-            }
+            // if self
+            //     .committer
+            //     .is_leader(previous, self.core.validator_index())
+            // {
+            self.try_make_proposal_for_round(previous, proposer);
+            // }
         }
         self.try_make_proposal_for_round(round, proposer);
     }

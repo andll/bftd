@@ -2,6 +2,7 @@ use crate::block::{Block, BlockReference};
 use crate::committee::Committee;
 use crate::log_byzantine;
 use crate::metrics::Metrics;
+use crate::protocol_config::ProtocolConfig;
 use crate::store::{BlockStore, BlockViewStore, DagExt};
 use anyhow::bail;
 use std::collections::hash_map::Entry;
@@ -14,6 +15,7 @@ pub struct BlockManager<S> {
     store: S,
     metrics: Arc<Metrics>,
     committee: Arc<Committee>,
+    protocol_config: ProtocolConfig,
 }
 
 struct SuspendedInfo {
@@ -35,13 +37,19 @@ pub struct AddBlockResult {
 }
 
 impl<S: BlockStore + BlockViewStore> BlockManager<S> {
-    pub fn new(store: S, metrics: Arc<Metrics>, committee: Arc<Committee>) -> Self {
+    pub fn new(
+        store: S,
+        metrics: Arc<Metrics>,
+        committee: Arc<Committee>,
+        protocol_config: ProtocolConfig,
+    ) -> Self {
         Self {
             store,
             missing_inverse: Default::default(),
             suspended: Default::default(),
             metrics,
             committee,
+            protocol_config,
         }
     }
 
@@ -93,8 +101,10 @@ impl<S: BlockStore + BlockViewStore> BlockManager<S> {
                         block.reference()
                     );
                     // todo reject all blocks referenced by the rejected block
+                    self.metrics.block_manager_rejected.inc();
                     rejected.push(*block.reference());
                 } else {
+                    self.metrics.block_manager_added.inc();
                     added.push(block.clone());
                     self.store.put(block);
                 }
@@ -153,13 +163,20 @@ impl<S: BlockStore + BlockViewStore> BlockManager<S> {
                 );
             }
         }
+        if self.protocol_config.critical_block_check {
+            self.check_critical_block(block)?;
+        }
+        Ok(())
+    }
+
+    fn check_critical_block(&self, block: &Arc<Block>) -> anyhow::Result<()> {
         let critical_block_support = self.store.critical_block_support(block, &self.committee);
-        if let Some(critical_block_support) = critical_block_support {
-            if critical_block_support < self.committee.f_threshold {
-                let critical_block = self.store.critical_block(block);
-                bail!("Block {} failed DAG validation: critical block {:?} has support {}, minimal requirement is {}",
-                    block.reference(), critical_block, critical_block_support, self.committee.f_threshold);
-            }
+        let Some((critical_block, support)) = critical_block_support else {
+            return Ok(());
+        };
+        if support < self.committee.f_threshold {
+            bail!("Block {} failed DAG validation: critical block {:?} has support {}, minimal requirement is {}",
+                block.reference(), critical_block, support, self.committee.f_threshold);
         }
         Ok(())
     }
@@ -179,19 +196,25 @@ impl AddBlockResult {
 mod tests {
     use super::*;
     use crate::block::tests::{blk, br};
-    use crate::block::{Round, ValidatorIndex};
+    use crate::protocol_config::ProtocolConfigBuilder;
+    use crate::store::memory_store::MemoryBlockStore;
     use crate::store::BlockReader;
-    use parking_lot::Mutex;
     use std::collections::HashSet;
 
     #[test]
-    pub fn block_store_test() {
-        let store = Mutex::new(HashMap::new());
-        let mut block_store = BlockManager::new(store, Metrics::new_test());
+    pub fn block_manager_test() {
+        let committee = Committee::new_test(vec![1; 3]);
+        let store = MemoryBlockStore::from_committee(&committee);
+        let mut protocol_config = ProtocolConfigBuilder::default();
+        protocol_config.with_critical_block_check(false);
+        let protocol_config = protocol_config.build();
+        let metrics = Metrics::new_test();
+        let mut block_store =
+            BlockManager::new(store, metrics.clone(), Arc::new(committee), protocol_config);
         let r = block_store.add_block(blk(1, 1, vec![br(0, 0), br(1, 0)]));
         r.assert_added_empty();
         r.assert_new_missing(vec![br(0, 0), br(1, 0)]);
-        assert_eq!(block_store.store.lock().len(), 0);
+        assert_eq!(metrics.block_manager_added.get(), 0);
         let r = block_store.add_block(blk(2, 2, vec![br(0, 0), br(1, 1)]));
         r.assert_added_empty();
         r.assert_no_new_missing();
@@ -199,7 +222,7 @@ mod tests {
 
         // Attempt to add same block again
         let r = block_store.add_block(blk(2, 2, vec![br(0, 0), br(1, 1)]));
-        assert_eq!(block_store.store.lock().len(), 0);
+        assert_eq!(metrics.block_manager_added.get(), 0);
         r.assert_added_empty();
         r.assert_no_new_missing();
         r.assert_no_previously_missing();
@@ -207,8 +230,8 @@ mod tests {
         let r = block_store.add_block(blk(1, 0, vec![]));
         r.assert_added_multi(vec![br(1, 0)]);
         r.assert_no_new_missing();
-        assert_eq!(block_store.store.lock().len(), 1);
-        assert!(block_store.store.lock().contains_key(&br(1, 0)));
+        assert_eq!(metrics.block_manager_added.get(), 1);
+        assert!(block_store.store.exists(&br(1, 0)));
         let r = block_store.add_block(blk(0, 0, vec![]));
         r.assert_added_multi(vec![br(0, 0), br(1, 1), br(2, 2)]);
         r.assert_no_new_missing();
@@ -218,61 +241,10 @@ mod tests {
             block_store.metrics.block_manager_missing_inverse_len.get(),
             0
         );
-        assert_eq!(block_store.store.lock().len(), 4);
-        assert!(block_store.store.lock().contains_key(&br(0, 0)));
-        assert!(block_store.store.lock().contains_key(&br(1, 1)));
-        assert!(block_store.store.lock().contains_key(&br(2, 2)));
-    }
-
-    impl BlockStore for Mutex<HashMap<BlockReference, Arc<Block>>> {
-        fn put(&self, block: Arc<Block>) {
-            self.lock().insert(*block.reference(), block);
-        }
-
-        fn put_with_block_view(
-            &self,
-            _block: Arc<Block>,
-            _block_view: Vec<Option<BlockReference>>,
-        ) {
-            unimplemented!()
-        }
-
-        fn flush(&self) {}
-        fn round_committed(&self, _round: Round) {}
-    }
-
-    impl BlockReader for Mutex<HashMap<BlockReference, Arc<Block>>> {
-        fn get(&self, key: &BlockReference) -> Option<Arc<Block>> {
-            self.lock().get(key).cloned()
-        }
-
-        fn get_own(&self, _validator: ValidatorIndex, _round: Round) -> Option<Arc<Block>> {
-            unimplemented!()
-        }
-
-        fn last_known_round(&self, _validator: ValidatorIndex) -> Round {
-            unimplemented!()
-        }
-
-        fn last_known_block(&self, _validator: ValidatorIndex) -> Arc<Block> {
-            unimplemented!()
-        }
-
-        fn exists(&self, key: &BlockReference) -> bool {
-            self.lock().contains_key(key)
-        }
-
-        fn get_blocks_by_round(&self, _round: Round) -> Vec<Arc<Block>> {
-            unimplemented!()
-        }
-
-        fn get_blocks_at_author_round(
-            &self,
-            _author: ValidatorIndex,
-            _round: Round,
-        ) -> Vec<Arc<Block>> {
-            unimplemented!()
-        }
+        assert_eq!(metrics.block_manager_added.get(), 4);
+        assert!(block_store.store.exists(&br(0, 0)));
+        assert!(block_store.store.exists(&br(1, 1)));
+        assert!(block_store.store.exists(&br(2, 2)));
     }
 
     impl AddBlockResult {
