@@ -111,6 +111,7 @@ impl Node {
             committee,
             self.config.validator_index,
             metrics,
+            self.genesis.protocol_config().clone(),
         );
         let clock = SystemTimeClock::new();
         let (proposer, mempool_client) = BasicMempool::new();

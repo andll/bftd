@@ -2,6 +2,7 @@ use crate::block::{Block, BlockReference, Round, ValidatorIndex};
 use crate::committee::Committee;
 use crate::crypto::{Blake2Hasher, Signer};
 use crate::metrics::Metrics;
+use crate::protocol_config::ProtocolConfig;
 use crate::store::{BlockStore, BlockViewStore, DagExt};
 use crate::threshold_clock::{StakeAggregator, ThresholdClockAggregator, ValidityThreshold};
 use bytes::Bytes;
@@ -19,12 +20,11 @@ pub struct Core<S, B> {
     proposer_clock: ThresholdClockAggregator,
     committee: Arc<Committee>,
     critical_blocks: BTreeMap<Round, (BlockReference, StakeAggregator<ValidityThreshold>)>,
-    // critical_block: Option<BlockReference>,
-    // critical_block_aggregator: StakeAggregator<ValidityThreshold>,
     last_proposed_reference: BlockReference,
     index: ValidatorIndex,
     parents_accumulator: ParentsAccumulator,
     metrics: Arc<Metrics>,
+    protocol_config: ProtocolConfig,
 }
 
 /// Application-specific trait to generate block payload.
@@ -42,7 +42,7 @@ pub trait ProposalMaker: Send + 'static {
     /// If a proposal currently is not ready, this can return an optional future
     /// that resolves when the proposal is ready.
     ///
-    /// If None is returned proposal is created without waiting for non-empty payload.
+    /// If None is returned, a proposal is created without waiting for non-empty payload.
     fn proposal_waiter<'a>(&'a mut self) -> Option<Pin<Box<dyn Future<Output = ()> + 'a + Send>>> {
         None
     }
@@ -55,6 +55,7 @@ impl<S: Signer, B: BlockStore + BlockViewStore> Core<S, B> {
         committee: Arc<Committee>,
         index: ValidatorIndex,
         metrics: Arc<Metrics>,
+        protocol_config: ProtocolConfig,
     ) -> Self {
         for block in committee.genesis_blocks() {
             let block = Arc::new(block);
@@ -85,6 +86,7 @@ impl<S: Signer, B: BlockStore + BlockViewStore> Core<S, B> {
             index,
             parents_accumulator,
             metrics,
+            protocol_config,
         };
         this.update_critical_blocks();
         this.add_blocks(&latest_blocks);
@@ -104,6 +106,9 @@ impl<S: Signer, B: BlockStore + BlockViewStore> Core<S, B> {
     }
 
     fn add_block_to_critical_block_aggregators(&mut self, reference: &BlockReference) {
+        if !self.protocol_config.critical_block_check {
+            return;
+        }
         for (proposal_round, (critical_block, aggregator)) in self.critical_blocks.iter_mut() {
             Self::update_critical_block_aggregator(
                 *proposal_round,
@@ -144,6 +149,9 @@ impl<S: Signer, B: BlockStore + BlockViewStore> Core<S, B> {
     }
 
     fn update_critical_blocks(&mut self) {
+        if !self.protocol_config.critical_block_check {
+            return;
+        }
         let proposal_rounds = self.possible_proposal_rounds();
         self.critical_blocks
             .retain(|r, _| proposal_rounds.contains(r));
@@ -238,6 +246,9 @@ impl<S: Signer, B: BlockStore + BlockViewStore> Core<S, B> {
     }
 
     pub fn critical_block_supported(&self, round: Round) -> bool {
+        if !self.protocol_config.critical_block_check {
+            return true;
+        }
         let possible_proposal_rounds = self.possible_proposal_rounds();
         if !possible_proposal_rounds.contains(&round) {
             panic!("critical_block_supported invariant violation on round {round}: possible_proposal_rounds: {possible_proposal_rounds:?}, round: {round}");
