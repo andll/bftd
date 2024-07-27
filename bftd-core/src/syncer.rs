@@ -139,7 +139,7 @@ impl Syncer {
         let committer =
             UniversalCommitterBuilder::new(committee.clone(), block_store.clone(), metrics.clone())
                 .with_pipeline(true)
-                .with_number_of_leaders(1)
+                .with_all_leaders()
                 .build();
         let validator_index = core.validator_index();
         let last_proposed_round = core.last_proposed_round();
@@ -295,8 +295,7 @@ impl<
                     if let Some(next_proposal_round) = self.core.vector_clock_round() {
                         let check_round = next_proposal_round.previous();
                         // todo use ValidatorSet instead of Vec
-                        // let mut wait_leaders = self.committer.get_leaders(check_round);
-                        let mut wait_leaders: Vec<_> = self.committee().enumerate_indexes().collect();
+                        let mut wait_leaders = self.committer.get_leaders(check_round);
                         wait_leaders.retain(|leader| {
                             if *leader == self.core.validator_index() {
                                 return false; // not waiting for self
@@ -327,8 +326,9 @@ impl<
                         } else {
                             let previous = next_proposal_round.previous();
                             if previous > self.core.last_proposed_round() {
-                                // todo check if leader
-                                self.try_make_proposal_for_round(previous, &mut proposer);
+                                if self.committer.is_leader(previous, self.core.validator_index()) {
+                                    self.try_make_proposal_for_round(previous, &mut proposer);
+                                }
                             }
                             if !proposal_deadline.is_set() {
                                 let deadline = Instant::now().add(self.protocol_config.leader_timeout);
@@ -454,12 +454,12 @@ impl<
 
         let previous = round.previous();
         if previous > self.core.last_proposed_round() {
-            // if self
-            //     .committer
-            //     .is_leader(previous, self.core.validator_index())
-            // {
-            self.try_make_proposal_for_round(previous, proposer);
-            // }
+            if self
+                .committer
+                .is_leader(previous, self.core.validator_index())
+            {
+                self.try_make_proposal_for_round(previous, proposer);
+            }
         }
         self.try_make_proposal_for_round(round, proposer);
     }

@@ -18,6 +18,8 @@ use super::{base_committer::BaseCommitter, CommitDecision, LeaderStatus, DEFAULT
 pub struct UniversalCommitter<B> {
     committers: Vec<BaseCommitter<B>>,
     leader_election: LeaderElection,
+    pipeline: bool,
+    committee: Arc<Committee>,
     metrics: Arc<Metrics>,
 }
 
@@ -82,6 +84,9 @@ impl<B: BlockReader> UniversalCommitter<B> {
     /// To preserve (theoretical) liveness, we should wait `Delta` time for at least the first leader.
     /// Can return empty vec if round does not have a designated leader.
     pub fn get_leaders(&self, round: Round) -> Vec<ValidatorIndex> {
+        if self.pipeline && self.leader_election.is_all() {
+            return self.committee.enumerate_indexes().collect();
+        }
         self.committers
             .iter()
             .filter_map(|committer| committer.elect_leader(round))
@@ -90,6 +95,9 @@ impl<B: BlockReader> UniversalCommitter<B> {
     }
 
     pub fn is_leader(&self, round: Round, author: ValidatorIndex) -> bool {
+        if self.pipeline && self.leader_election.is_all() {
+            return true;
+        }
         let ar = AuthorRound::new(author, round);
         self.committers
             .iter()
@@ -169,6 +177,8 @@ impl<B: BlockReader + Clone> UniversalCommitterBuilder<B> {
         UniversalCommitter {
             committers,
             leader_election: self.leader_election,
+            pipeline: self.pipeline,
+            committee: self.committee,
             metrics: self.metrics,
         }
     }
@@ -183,6 +193,13 @@ impl LeaderElection {
         match self {
             LeaderElection::All => committee.len() as u64,
             LeaderElection::MultiLeader(n) => *n,
+        }
+    }
+
+    pub fn is_all(&self) -> bool {
+        match self {
+            LeaderElection::All => true,
+            LeaderElection::MultiLeader(_) => false,
         }
     }
 
