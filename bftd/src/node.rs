@@ -11,6 +11,7 @@ use bftd_core::genesis::Genesis;
 use bftd_core::metrics::Metrics;
 use bftd_core::network::{NoisePrivateKey, TcpConnectionPool};
 use bftd_core::store::rocks_store::RocksStore;
+use bftd_core::store::{BlockReader, BlockStore};
 use bftd_core::syncer::{Syncer, SystemTimeClock};
 use futures::future::join_all;
 use futures::FutureExt;
@@ -98,6 +99,11 @@ impl Node {
         let registry = Registry::new();
         let metrics = Metrics::new_in_registry(&registry, &committee);
         let block_store = RocksStore::open(&self.storage_path, &committee, metrics.clone())?;
+        for genesis_block in committee.genesis_blocks() {
+            if !block_store.exists(genesis_block.reference()) {
+                block_store.put(Arc::new(genesis_block));
+            }
+        }
         let block_store = BlockCache::new(block_store, &committee);
         let block_store = Arc::new(block_store);
         let prometheus_handle = if let Some(prometheus_bind) = self.config.prometheus_bind {

@@ -57,10 +57,6 @@ impl<S: Signer, B: BlockStore + BlockViewStore> Core<S, B> {
         metrics: Arc<Metrics>,
         protocol_config: ProtocolConfig,
     ) -> Self {
-        for block in committee.genesis_blocks() {
-            let block = Arc::new(block);
-            block_store.put(block);
-        }
         let mut latest_blocks = Vec::with_capacity(committee.len());
         let mut last_own_block = None;
         for validator in committee.enumerate_indexes() {

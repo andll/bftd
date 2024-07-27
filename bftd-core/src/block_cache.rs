@@ -14,6 +14,7 @@ pub struct BlockCache<B> {
 
 struct BlockCacheInner {
     cache: BTreeMap<Round, BTreeMap<BlockReference, CacheEntry>>,
+    last_known_blocks: Vec<Arc<Block>>,
     low_watermark_included: Round,
 }
 
@@ -31,8 +32,10 @@ impl<B: BlockStore + CommitStore + BlockViewStore> BlockCache<B> {
                 .saturating_sub(Self::PRESERVE_ROUNDS_AFTER_COMMIT),
         );
         let cache = Self::load_cache(&store, low_watermark_included);
+        let last_known_blocks = Self::load_last_known(&store, committee);
         let cache = BlockCacheInner {
             cache,
+            last_known_blocks,
             low_watermark_included,
         };
         let cache = RwLock::new(cache);
@@ -53,6 +56,13 @@ impl<B: BlockReader + BlockViewStore> BlockCache<B> {
         self.cache
             .write()
             .update_watermark(new_low_watermark_included);
+    }
+
+    fn load_last_known(store: &B, committee: &Committee) -> Vec<Arc<Block>> {
+        committee
+            .enumerate_indexes()
+            .map(|vi| store.last_known_block(vi))
+            .collect()
     }
 
     fn load_cache(
@@ -113,17 +123,21 @@ impl<B: BlockStore + BlockViewStore> BlockStore for BlockCache<B> {
             block_view: block_view.clone(),
             block: block.clone(),
         };
+        let mut cache = RwLockUpgradableReadGuard::upgrade(cache);
         if cache.cached_round(block.round()) {
-            let mut cache = RwLockUpgradableReadGuard::upgrade(cache);
             cache
                 .cache
                 .entry(block.round())
                 .or_default()
                 .insert(*block.reference(), entry);
-        } else {
-            drop(cache);
         }
-        self.store.put_with_block_view(block, block_view)
+        // still holding cache lock here
+        self.store.put_with_block_view(block.clone(), block_view);
+        let validator = block.author();
+        let last_known = cache.last_known_block(validator);
+        if block.round() > last_known.round() {
+            *validator.slice_get_mut(&mut cache.last_known_blocks) = block;
+        }
     }
 
     fn put_with_block_view(&self, _block: Arc<Block>, _block_view: Vec<Option<BlockReference>>) {
@@ -165,7 +179,7 @@ impl<B: BlockReader> BlockReader for BlockCache<B> {
     }
 
     fn last_known_block(&self, validator: ValidatorIndex) -> Arc<Block> {
-        self.store.last_known_block(validator)
+        self.cache.read().last_known_block(validator)
     }
 
     fn exists(&self, key: &BlockReference) -> bool {
@@ -234,12 +248,12 @@ impl BlockReader for BlockCacheInner {
         return range.next().map(|(_, v)| v.block());
     }
 
-    fn last_known_round(&self, _validator: ValidatorIndex) -> Round {
-        unimplemented!()
+    fn last_known_round(&self, validator: ValidatorIndex) -> Round {
+        self.last_known_block(validator).round()
     }
 
-    fn last_known_block(&self, _validator: ValidatorIndex) -> Arc<Block> {
-        unimplemented!()
+    fn last_known_block(&self, validator: ValidatorIndex) -> Arc<Block> {
+        validator.slice_get(&self.last_known_blocks).clone()
     }
 
     fn exists(&self, key: &BlockReference) -> bool {
