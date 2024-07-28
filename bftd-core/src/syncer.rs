@@ -433,7 +433,7 @@ impl<
         let all_blocks = interpreter.interpret_commit(index, leader.clone());
         self.uncommitted_counter.committed(&all_blocks);
         for block in &all_blocks {
-            if block.author() == self.core.validator_index() {
+            if !block.is_genesis() && block.author() == self.core.validator_index() {
                 let age_ns = self.clock.time_ns().saturating_sub(block.time_ns());
                 self.metrics
                     .syncer_own_block_commit_age_ms
