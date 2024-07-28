@@ -389,8 +389,8 @@ impl<
                     if !proposal_deadline.is_set_for_payload() {
                         let timeouts: Vec<_> = proposal_deadline.waiting_validators.as_ref().unwrap().iter().map(|l|AuthorRound::new(*l, waiting_round)).collect();
                         self.metrics.syncer_leader_timeouts.inc();
-                        let dag = self.block_store.print_dag(&self.block_store.get(self.core.last_proposed_reference()).unwrap(), 6);
-                        tracing::warn!("Leader timeout {timeouts:?}. Dag: {dag}");
+                        tracing::warn!("Leader timeout {timeouts:?}");
+                        tracing::trace!("Dag: {}", self.block_store.print_dag(&self.block_store.get(self.core.last_proposed_reference()).unwrap(), 6));
                     }
                     self.try_make_proposal(&mut proposer);
                     proposal_deadline.reset();
