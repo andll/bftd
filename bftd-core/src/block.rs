@@ -228,7 +228,8 @@ impl Block {
             parent.write(&mut data);
         }
         data.put_slice(payload);
-        let signature = signer.sign_bytes(&data[Self::ROUND_OFFSET..]);
+        let sign_hash = hasher.hash_bytes(&data[Self::ROUND_OFFSET..]);
+        let signature = signer.sign_bytes(sign_hash.as_ref());
         data[Self::SIGNATURE_OFFSET..Self::SIGNATURE_OFFSET + SIGNATURE_LENGTH]
             .copy_from_slice(&signature.0);
         let hash = hasher.hash_bytes(&data[Self::SIGNATURE_OFFSET..]);
@@ -276,8 +277,9 @@ impl Block {
             hash == self.reference.hash,
             "Block hash does not match block content"
         );
+        let sign_hash = hasher.hash_bytes(&self.data[Self::ROUND_OFFSET..]);
         ensure!(
-            verifier.check_signature(&self.data[Self::ROUND_OFFSET..], &self.signature),
+            verifier.check_signature(sign_hash.as_ref(), &self.signature),
             "Block signature verification failed"
         );
         ensure!(
@@ -603,6 +605,12 @@ impl fmt::Debug for AuthorRound {
 impl fmt::Display for BlockHash {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", hex::encode(&self.0[..4]))
+    }
+}
+
+impl AsRef<[u8]> for BlockHash {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
     }
 }
 
