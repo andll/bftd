@@ -37,7 +37,4 @@ scrape_configs:
       - targets: ['{{prometheus_bind}}']
 
 remote_write:
-  - url: https://prometheus-prod-13-prod-us-east-0.grafana.net/api/prom/push
-    basic_auth:
-      username: 1645235
-      password: glc_eyJvIjoiMTE1NTM0MyIsIm4iOiJzdGFjay05NjQ3NjItaW50ZWdyYXRpb24tYSIsImsiOiJqMTh0NE9VWTBGaUY2RjM4SThOSTlOWDciLCJtIjp7InIiOiJwcm9kLXVzLWVhc3QtMCJ9fQ==
+  - url: http://prometheus.dev.bftd.io:9090/api/v1/write
