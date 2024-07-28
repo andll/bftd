@@ -32,7 +32,7 @@ scrape_configs:
     # machine by default.
     static_configs:
       - targets: ['localhost:9100']
-  - job_name: bftd
+  - job_name: bftd-server
     static_configs:
       - targets: ['{{prometheus_bind}}']
 

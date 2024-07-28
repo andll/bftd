@@ -228,7 +228,7 @@ impl Syncer {
         };
         #[cfg(feature = "syncer_thread")]
         let handle = thread::Builder::new()
-            .name("bftd.syncer".to_string())
+            .name("bftd-server.syncer".to_string())
             .spawn(move || syncer.run_thread(proposer))
             .unwrap();
         #[cfg(not(feature = "syncer_thread"))]

@@ -1,18 +1,8 @@
-pub mod config;
-mod load_gen;
-pub mod mempool;
-mod node;
-mod prometheus;
-pub mod server;
-#[cfg(test)]
-mod smoke_tests;
-mod test_cluster;
-
-use crate::node::NodeHandle;
-use crate::test_cluster::{start_node, TestCluster};
 use anyhow::bail;
 use bftd_core::block::ValidatorIndex;
 use bftd_core::protocol_config::ProtocolConfigBuilder;
+use bftd_server::node::NodeHandle;
+use bftd_server::test_cluster::{start_node, TestCluster};
 use clap::Parser;
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use std::path::PathBuf;
@@ -51,19 +41,19 @@ struct NewChainArgs {
     #[arg(
         long,
         short = 's',
-        help = "Bind address for bftd server. Bftd server is not started if this(or http_server_base_port) is not set.",
+        help = "Bind address for bftd-server server. Bftd server is not started if this(or http_server_base_port) is not set.",
         conflicts_with = "http_server_base_port"
     )]
     http_server_bind: Option<SocketAddr>,
     #[arg(
         long,
-        help = "Base port for binding bftd server. Bftd server is not started if this(or http_server_bind) is not set.",
+        help = "Base port for binding bftd-server server. Bftd server is not started if this(or http_server_bind) is not set.",
         conflicts_with = "http_server_bind"
     )]
     http_server_base_port: Option<u16>,
     #[arg(
         long,
-        help = "Ip address for binding bftd server when http_server_base_port is set.",
+        help = "Ip address for binding bftd-server server when http_server_base_port is set.",
         default_value = "127.0.0.1",
         requires = "http_server_base_port"
     )]

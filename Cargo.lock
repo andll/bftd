@@ -226,31 +226,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bftd"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-stream",
- "axum",
- "bftd-core",
- "bytes",
- "clap",
- "futures",
- "handlebars",
- "hex",
- "mime",
- "prometheus",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "tempdir",
- "tokio",
- "toml",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "bftd-core"
 version = "0.1.0"
 dependencies = [
@@ -275,6 +250,41 @@ dependencies = [
  "tempdir",
  "thiserror",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "bftd-main"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bftd-core",
+ "bftd-server",
+ "clap",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "bftd-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "axum",
+ "bftd-core",
+ "bytes",
+ "futures",
+ "handlebars",
+ "hex",
+ "mime",
+ "prometheus",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "tempdir",
+ "tokio",
+ "toml",
  "tracing",
  "tracing-subscriber",
 ]

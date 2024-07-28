@@ -192,7 +192,7 @@ impl NodeHandle {
         }
         join_all(futures).await;
         let Ok(syncer) = Arc::try_unwrap(self.syncer) else {
-            panic!("Can't unwrap syncer - bftd server did not stop properly?")
+            panic!("Can't unwrap syncer - bftd-server server did not stop properly?")
         };
         syncer.stop().await;
     }
