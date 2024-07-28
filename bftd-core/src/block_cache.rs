@@ -175,7 +175,7 @@ impl<B: BlockReader> BlockReader for BlockCache<B> {
     }
 
     fn last_known_round(&self, validator: ValidatorIndex) -> Round {
-        self.store.last_known_round(validator)
+        self.cache.read().last_known_round(validator)
     }
 
     fn last_known_block(&self, validator: ValidatorIndex) -> Arc<Block> {

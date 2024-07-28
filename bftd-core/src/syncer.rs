@@ -323,7 +323,6 @@ impl<
                             if *leader == self.core.validator_index() {
                                 return false; // not waiting for self
                             }
-                            // todo - cache this value
                             if self.block_store.last_known_round(*leader) < check_round {
                                 if self.rpc.is_connected(self.committee().network_key(*leader)) {
                                     tracing::debug!("Not ready to make proposal, missing {}{}", leader, check_round);
