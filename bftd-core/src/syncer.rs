@@ -343,7 +343,7 @@ impl<
                                 proposal_deadline.reset();
                             } else if !proposal_deadline.is_set_for_payload() {
                                 // todo set deadline based on round start time?
-                                let deadline = Instant::now().add(self.protocol_config.leader_timeout);
+                                let deadline = Instant::now().add(self.protocol_config.empty_commit_timeout);
                                 proposal_deadline.set_payload_deadline(deadline)
                             }
                         } else {
