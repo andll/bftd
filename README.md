@@ -19,9 +19,9 @@ With a small cluster of 12 nodes of an inexpensive AWS instance type c7gn.xlarge
 # Running bftd locally
 
 You can run bftd cluster locally.
-Setup the cluster:
+Set up the cluster:
 ```
-cargo run --package bftd -- new-chain my-awesome-chain 127.0.0.1:{8080..8084} --leader-timeout-ms 2000 --empty-commit-timeout-ms --http_server_base_port 9080
+cargo run --package bftd -- new-chain my-awesome-chain 127.0.0.1:{8080..8084} --leader-timeout-ms 2000 --empty-commit-timeout-ms --http-server-base-port 9080
 ```
 Run all nodes locally:
 ```
@@ -29,7 +29,7 @@ RUST_LOG=bftd_core::syncer=info cargo run --package bftd -- local-cluster my-awe
 ```
 When the cluster has started, you can tail commits via http interface:
 ```
-curl http://127.0.0.1:9080/tail?from=0&skip_empty_commits=true&pretty=true
+curl 'http://127.0.0.1:9080/tail?from=0&skip_empty_commits=true&pretty=true'
 ```
 And send a transaction:
 ```
