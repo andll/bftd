@@ -38,7 +38,7 @@ pub struct Block {
     /// Id of the chain
     chain_id: ChainId,
     /// Timestamp when block was created. Number of nanoseconds form unix epoch.
-    time_ns: u64, // todo verify
+    time_ns: u64,
     /// References to parent blocks
     parents: Vec<BlockReference>,
     payload_offset: usize,
