@@ -2,7 +2,7 @@ use crate::block::{BlockReference, ValidatorIndex};
 use crate::block_manager::AddBlockResult;
 use crate::committee::{BlockMatch, BlockVerifiedByCommittee, Committee};
 use crate::log_byzantine;
-use crate::metrics::Metrics;
+use crate::metrics::{EntranceGaugeExt, Metrics};
 use crate::rpc::{NetworkRequest, NetworkResponse, NetworkRpc, RpcResult};
 use crate::syncer::{RpcRequest, RpcResponse};
 use crate::threshold_clock::ValidatorSet;
@@ -233,10 +233,14 @@ impl FetchTask {
         reference: BlockReference,
     ) -> Result<BlockVerifiedByCommittee, ValidatorIndex> {
         tracing::debug!("Sending get_block RPC to {peer} to get block {reference}");
-        let response = inner
-            .rpc
-            .rpc(inner.committee.network_key(peer), NetworkRequest(request))
-            .await;
+        inner.metrics.fetcher_requests_total.inc();
+        let response = {
+            let _guard = inner.metrics.fetcher_inflight_requests.entrance_gauge();
+            inner
+                .rpc
+                .rpc(inner.committee.network_key(peer), NetworkRequest(request))
+                .await
+        };
         peer.slice_get(&inner.inflight_peer_rpc)
             .fetch_sub(1, Ordering::Relaxed);
         let response = Self::parse_get_block_response(response);

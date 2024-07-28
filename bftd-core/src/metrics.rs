@@ -151,3 +151,31 @@ impl UtilizationTimerExt for IntCounter {
         UtilizationTimer::new(self)
     }
 }
+
+pub struct EntranceGauge {
+    gauge: IntGauge,
+}
+
+impl EntranceGauge {
+    pub fn new(gauge: &IntGauge) -> Self {
+        let gauge = gauge.clone();
+        gauge.inc();
+        Self { gauge }
+    }
+}
+
+impl Drop for EntranceGauge {
+    fn drop(&mut self) {
+        self.gauge.dec();
+    }
+}
+
+pub trait EntranceGaugeExt {
+    fn entrance_gauge(&self) -> EntranceGauge;
+}
+
+impl EntranceGaugeExt for IntGauge {
+    fn entrance_gauge(&self) -> EntranceGauge {
+        EntranceGauge::new(self)
+    }
+}
