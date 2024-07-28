@@ -25,6 +25,8 @@ use std::marker::PhantomData;
 use std::ops::Add;
 use std::pin::Pin;
 use std::sync::Arc;
+#[cfg(feature = "syncer_thread")]
+use std::thread;
 use std::time::{Duration, SystemTime};
 use std::{cmp, fmt};
 use tokio::select;
@@ -33,6 +35,9 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 
 pub struct Syncer {
+    #[cfg(feature = "syncer_thread")]
+    handle: thread::JoinHandle<()>,
+    #[cfg(not(feature = "syncer_thread"))]
     handle: JoinHandle<()>,
     stop: oneshot::Sender<()>,
     last_commit_receiver: watch::Receiver<Option<u64>>,
@@ -221,6 +226,12 @@ impl Syncer {
             protocol_config,
             _proposer: PhantomData,
         };
+        #[cfg(feature = "syncer_thread")]
+        let handle = thread::Builder::new()
+            .name("bftd.syncer".to_string())
+            .spawn(move || syncer.run_thread(proposer))
+            .unwrap();
+        #[cfg(not(feature = "syncer_thread"))]
         let handle = tokio::spawn(syncer.run(proposer));
         Syncer {
             handle,
@@ -234,6 +245,9 @@ impl Syncer {
         self.verification_task.abort();
         drop(self.stop);
         self.verification_task.await.ok();
+        #[cfg(feature = "syncer_thread")]
+        self.handle.join().ok();
+        #[cfg(not(feature = "syncer_thread"))]
         self.handle.await.ok();
     }
 
@@ -250,6 +264,15 @@ impl<
     > SyncerTask<S, B, C, P>
 {
     const STALL_TIMEOUT: Duration = Duration::from_secs(15);
+
+    #[cfg(feature = "syncer_thread")]
+    pub fn run_thread(self, proposer: P) {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(self.run(proposer));
+    }
 
     pub async fn run(mut self, mut proposer: P) {
         self.try_make_proposal(&mut proposer);
