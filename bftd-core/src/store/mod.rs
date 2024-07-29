@@ -283,12 +283,6 @@ impl<T: BlockViewStore> BlockViewStore for Arc<T> {
      Vector clock rule prevents validator from generating blocks if they can't receive blocks from other validators.
      Critical block rule prevents validator from generating blocks if other validators have not received earlier blocks from this validator.
 
-     * When inserting block A into local store, we determine whether to persist a taint flag along with block A.
-       * If block preceding to A has a taint flag set, then block A also has a taint flag set
-       * If block preceding to A is not equal to the last received block from author(A) then block A also has taint flag set.
-     Unlike the other properties above, a taint flag is a **local** property of a block - correct validators do not always come to the same conclusion on whether some block is tainted or not.
-     Lemma - blocks produced by correct validators will never be perceived as tainted by other correct validators.
-
     * BlockView(A) where A is a block and V is a given validator defined as the following:
       * For each genesis block G and validator V, BlockView(G)[V] := GenesisBlock(V)
       * For each non-genesis block A,
