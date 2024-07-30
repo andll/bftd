@@ -35,6 +35,3 @@ scrape_configs:
   - job_name: bftd-server
     static_configs:
       - targets: ['{{prometheus_bind}}']
-
-remote_write:
-  - url: http://prometheus.dev.bftd.io:9090/api/v1/write
