@@ -1,13 +1,15 @@
 What is BFTd?
 
 bftd is an implementation proof-of-stake byzantine fault-tolerant consensus. bftd implements Oxa consensus protocol (which is built on top of Mysticeti consensus) — a cutting-edge DAG-based consensus protocol designed for low latency and high throughput.
+
 Oxa protocol couples consensus with transaction dissemination which helps to reduce overall latency and simplify usage.v
 
 # Performance
-bftd is likely the most performant BFT consensus engine out there.
+`bftd` is likely the most performant BFT consensus engine out there.
 
 A small cluster of 12 nodes of an inexpensive AWS instance type c7gn.xlarge, distributed across 4 regions globally (us-west, us-east, eu-west and ap-northeast) **bftd can deliver 450K TPS with a 630 millisecond finality**. (With a transaction size of 512 bytes)
-Under the lower load, bftd commit latency across 4 regions can go down to 440ms.
+
+Under the lower load, bftd commit latency across 4 regions can go down to **440ms**.
 
 # What are the main features of bftd consensus?
 
@@ -69,11 +71,18 @@ You can then run bftd on each machine:
 bftd/target/release/bftd run <configuration-directory>
 ```
 
-We provide few templates that can be used to simplify usage of bftd in `bftd-server/resources` directory:
+We provide few templates that can be used to simplify deployment of bftd in `bftd-server/resources` directory:
 
-* `setup.sh` can be used to install 
+* `setup.sh` can be used to install rust toolchain and other dependencies on Ubuntu linux
+* `bftd.service` is an example template for the Systemd service
+* `prometheus.yml` is a template for the configuration file. The `new-chain` command will actually use this template to generate individual `prometheus.yml` files for each validator that you can use. 
+* `dashboard.json` is a Grafana dashboard with the most important bftd metrics.
 
+# Embedding bftd
 
-# Embedding BFTd
+bftd can be embedded into another blockchain as a library(rust crate).
 
-bftd can be embedded into another blockchain as a library.
+We provide two packages:
+* `bftd-core` provides consensus engine. It has much fewer dependencies, but you would need to provide entry-points for users yourself.
+* `bftd-server` provides additional wrappers on top of `bftd-core`. It also contains a simple HTTP server that can be used to send transactions and tail commits. 
+
