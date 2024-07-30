@@ -1,18 +1,21 @@
 use crate::mempool::{BasicMempoolClient, MAX_TRANSACTION};
 use anyhow::{bail, ensure};
-use bftd_core::counter;
 use bftd_core::syncer::{Clock, SystemTimeClock};
-use prometheus::{IntCounter, Registry};
+use bftd_core::{counter, gauge};
+use prometheus::{IntCounter, IntGauge, Registry};
 use rand::rngs::ThreadRng;
 use rand::RngCore;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinHandle;
+use tokio::time::Instant;
 use tracing::log;
 
 pub struct LoadGenConfig {
     transaction_size: usize,
     tps: Option<usize>,
+    increase_interval_s: Option<usize>,
+    increase_multiplier: Option<usize>,
 }
 
 impl LoadGenConfig {
@@ -27,14 +30,16 @@ impl LoadGenConfig {
             "Transaction size is too large"
         );
         let tps = s.next();
-        let tps = if let Some(tps) = tps {
-            Some(tps.parse()?)
-        } else {
-            None
-        };
+        let tps = tps.map(str::parse).transpose()?;
+        let increase_interval_s = s.next();
+        let increase_interval_s = increase_interval_s.map(str::parse).transpose()?;
+        let increase_multiplier = s.next();
+        let increase_multiplier = increase_multiplier.map(str::parse).transpose()?;
         Ok(Self {
             transaction_size,
             tps,
+            increase_interval_s,
+            increase_multiplier,
         })
     }
 }
@@ -71,11 +76,24 @@ impl LoadGen {
             self.config.tps
         );
         let clock = SystemTimeClock::new();
-        let mut tps_limit = self
-            .config
-            .tps
-            .map(|limit| TpsLimit::new(limit as u64, 100));
+        let mut tps = self.config.tps;
+        self.metrics
+            .load_gen_target_tps
+            .set(tps.unwrap_or_default() as i64);
+        let mut tps_limit = tps.map(|limit| TpsLimit::new(limit as u64, 100));
+        let mut increase_start = Instant::now();
         loop {
+            if let Some(increase_interval_s) = self.config.increase_interval_s {
+                if increase_start.elapsed().as_secs() >= increase_interval_s as u64 {
+                    let increase_multiplier = self.config.increase_multiplier.unwrap_or(2);
+                    tps = Some(tps.unwrap() * increase_multiplier);
+                    tps_limit = Some(TpsLimit::new(tps.unwrap() as u64, 100));
+                    increase_start = Instant::now();
+                    self.metrics
+                        .load_gen_target_tps
+                        .set(tps.unwrap_or_default() as i64);
+                }
+            }
             if let Some(tps_limit) = &mut tps_limit {
                 tps_limit.increment(&clock).await;
             }
@@ -138,12 +156,14 @@ impl TpsLimit {
 
 pub struct LoadGenMetrics {
     load_gen_sent_transactions: IntCounter,
+    load_gen_target_tps: IntGauge,
 }
 
 impl LoadGenMetrics {
     pub fn new_in_registry(registry: &Registry) -> Arc<Self> {
         Arc::new(Self {
             load_gen_sent_transactions: counter!("load_gen_sent_transactions", &registry),
+            load_gen_target_tps: gauge!("load_gen_target_tps", &registry),
         })
     }
 }
