@@ -15,7 +15,7 @@ pub struct LoadGenConfig {
     transaction_size: usize,
     tps: Option<usize>,
     increase_interval_s: Option<usize>,
-    increase_multiplier: Option<usize>,
+    increase_multiplier: Option<f64>,
 }
 
 impl LoadGenConfig {
@@ -85,8 +85,8 @@ impl LoadGen {
         loop {
             if let Some(increase_interval_s) = self.config.increase_interval_s {
                 if increase_start.elapsed().as_secs() >= increase_interval_s as u64 {
-                    let increase_multiplier = self.config.increase_multiplier.unwrap_or(2);
-                    tps = Some(tps.unwrap() * increase_multiplier);
+                    let increase_multiplier = self.config.increase_multiplier.unwrap_or(2.);
+                    tps = Some((tps.unwrap() as f64 * increase_multiplier) as usize);
                     tps_limit = Some(TpsLimit::new(tps.unwrap() as u64, 100));
                     increase_start = Instant::now();
                     self.metrics
