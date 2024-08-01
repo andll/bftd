@@ -315,7 +315,7 @@ impl<
                             self.last_known_round = cmp::max(self.last_known_round, max_round);
                         }
                     }
-                    if let Some(next_proposal_round) = self.core.vector_clock_round() {
+                    if let Some(next_proposal_round) = self.core.threshold_clock_round() {
                         let check_round = next_proposal_round.previous();
                         // todo use ValidatorSet instead of Vec
                         let mut wait_leaders = self.committer.get_leaders(check_round);
@@ -384,7 +384,7 @@ impl<
                 _ = proposal_deadline.future() => {
                     let _timer = self.metrics.syncer_main_loop_util_ns.utilization_timer();
                     self.metrics.syncer_main_loop_calls.inc();
-                    let waiting_round = self.core.vector_clock_round().unwrap_or_default().previous();
+                    let waiting_round = self.core.threshold_clock_round().unwrap_or_default().previous();
                     if !proposal_deadline.is_set_for_payload() {
                         let timeouts: Vec<_> = proposal_deadline.waiting_validators.as_ref().unwrap().iter().map(|l|AuthorRound::new(*l, waiting_round)).collect();
                         self.metrics.syncer_leader_timeouts.inc();
@@ -469,7 +469,7 @@ impl<
     }
 
     fn try_make_proposal(&mut self, proposer: &mut P) {
-        let round = self.core.vector_clock_round();
+        let round = self.core.threshold_clock_round();
         let Some(round) = round else {
             return;
         };

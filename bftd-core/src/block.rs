@@ -23,7 +23,7 @@ use std::sync::Arc;
        * for response for get_block RPC - reference matches requested reference
      * time_ns upper bound - time_ns is not in the future comparing to current time
      * chain_id of a block matches chain_id of the committee
-     * parents vector clock
+     * parents threshold clock
    * Block stored locally has all parents - BlockManager
    * Block payload matches application-specific format - BlockFilter
    * Correctness against block's sub-dag - BlockManager::check_block_before_adding:

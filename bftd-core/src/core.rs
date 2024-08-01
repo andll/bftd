@@ -195,9 +195,9 @@ impl<S: Signer, B: BlockStore + BlockViewStore> Core<S, B> {
         }
     }
 
-    /// returns vector clock round for new proposal
-    /// returns none if vector clock round is below or equal to the last proposed round
-    pub fn vector_clock_round(&self) -> Option<Round> {
+    /// returns threshold clock round for new proposal
+    /// returns none if the threshold clock round is below or equal to the last proposed round
+    pub fn threshold_clock_round(&self) -> Option<Round> {
         let round = self.proposer_clock.get_round();
         if round > self.last_proposed_round() {
             Some(round)
@@ -207,7 +207,7 @@ impl<S: Signer, B: BlockStore + BlockViewStore> Core<S, B> {
     }
 
     fn possible_proposal_rounds(&self) -> SmallVec<[Round; 2]> {
-        let round = self.vector_clock_round();
+        let round = self.threshold_clock_round();
         let mut rounds = SmallVec::new();
         let Some(round) = round else {
             return rounds;

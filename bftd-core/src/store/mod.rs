@@ -277,10 +277,10 @@ impl<T: BlockViewStore> BlockViewStore for Arc<T> {
       * If block A is a preceding block for B and A.round = B.round - 1,
          then block preceding to A is a critical block for B.
    * If block B has a critical block A, then B is only valid if minimum of f+1 of B's parents reference block A.
-     In a way, this critical block rule is essentially a "mirror" rule to a vector clock rule of mysticeti protocol.
-     Vector clock rule states that a validator should hear from 2f+1 of other nodes before it can produce a next block.
+     In a way, this critical block rule is essentially a "mirror" rule to a threshold clock rule of mysticeti protocol.
+     Threshold clock rule states that a validator should hear from 2f+1 of other nodes before it can produce a next block.
      The critical block rule states that a validator should broadcast its blocks and get them included by other validators, before it can create more blocks.
-     Vector clock rule prevents validator from generating blocks if they can't receive blocks from other validators.
+     Threshold clock rule prevents validator from generating blocks if they can't receive blocks from other validators.
      Critical block rule prevents validator from generating blocks if other validators have not received earlier blocks from this validator.
 
     * BlockView(A) where A is a block and V is a given validator defined as the following:
