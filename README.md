@@ -2,21 +2,21 @@ What is BFTd?
 
 bftd is an implementation proof-of-stake byzantine fault-tolerant consensus. bftd implements Oxa consensus protocol (which is built on top of Mysticeti consensus) — a cutting-edge DAG-based consensus protocol designed for low latency and high throughput.
 
-Oxa protocol couples consensus with transaction dissemination which helps to reduce overall latency and simplify usage.v
+Oxa protocol couples consensus with transaction dissemination which helps to reduce overall latency and simplify usage.
 
 # Performance
 `bftd` is likely the most performant BFT consensus engine out there.
 
 A small cluster of 12 nodes of an inexpensive AWS instance type c7gn.xlarge, distributed across 4 regions globally (us-west, us-east, eu-west and ap-northeast) **bftd can deliver 450K TPS with a 630 millisecond finality**. (With a transaction size of 512 bytes)
 
-Under the lower load, bftd commit latency across 4 regions can go down to **440ms**.
+Under the lower load, bftd commit latency across 4 regions goes down to **440ms**.
 
 # What are the main features of bftd consensus?
 
-* **Proof of stake**. Each validator(node) is assigned certain stake in the system. The safety properties of the system are based on the assumption that at least 2/3 of total stake follow the protocol.
+* **Proof of stake**. Each validator(node) is assigned certain stake in the system. The safety properties of the system are based on the assumption that at least 2/3 of the total stake follow the protocol.
 * **Byzantine fault-tolerance**. Protocol maintains its properties as long as less than 1/3 validators in the network are malicious. 
 * **Deterministic finality**. Protocol gives explicit (deterministic) signal when transaction is final. Some consensus protocols (for example bitcoin PoW) only provide probabilistic finality. 
-* **Low finality and high throughput**. Bftd employs DAG-based consensus protocol with uncertified DAG, allowing it to demonstrate low latency with very high throughput. 
+* **Low finality and high throughput**. Bftd employs DAG-based consensus protocol based on uncertified DAG approach, allowing it to reach low latency combined with very high throughput. 
 * **Coupling between consensus and transaction dissemination**. When using bftd, a client only needs to submit transaction to a single validator. The transaction will be included in the chain even if this validator does not get a chance to be a leader. With other consensus protocols, for example, HotStuff picking the right validator can be essential to minimizing client latency.
  
 # Running bftd locally
@@ -101,6 +101,8 @@ fn main() -> anyhow::Result<()> {
     runtime.block_on(async {
         handle.send_transaction(vec![1, 2, 3]).await;
         println!("Transaction was sent, waiting for it to be committed");
+        // Replay log from the last seen commit
+        // You can use FullCommit::index to get index of the last commit
         let mut commit_reader = handle.read_commits_from(0);
         loop {
             let commit = commit_reader
