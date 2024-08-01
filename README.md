@@ -51,7 +51,7 @@ The process of setting up bftd consists of two steps:
 You need to know IP addresses of validators ahead of time. 
 To bootstrap your testnet you can run the following command locally:
 ```
-cargo run --package bftd -- new-chain awesome-testnet {IP-addresses-of-machines}:9200 --prometheus-bind 127.0.0.1:9091 --bind 0.0.0.0 --prometheus-template bftd/resources/prometheus.yml
+cargo run --package bftd -- new-chain awesome-testnet {IP-addresses-of-machines}:9200 --prometheus-bind 127.0.0.1:9091 --bind 0.0.0.0 --prometheus-template bftd-server/resources/prometheus.yml
 ```
 
 This will create a directory `clusters/awesome-testnet` with configuration files for each validator.
@@ -59,7 +59,7 @@ This will create a directory `clusters/awesome-testnet` with configuration files
 
 After genesis is done, you should copy configuration files to each machine.
 
-After that, checkout and build bftd on each validator:
+After that, clone the repo and build bftd on each validator:
 ```
 git clone <this repo>
 cd bftd
