@@ -24,7 +24,7 @@ Under the lower load, bftd commit latency across 4 regions can go down to **440m
 You can run bftd cluster locally.
 Set up the cluster:
 ```
-cargo run --package bftd -- new-chain my-awesome-chain 127.0.0.1:{8080..8084} --leader-timeout-ms 2000 --empty-commit-timeout-ms --http-server-base-port 9080
+cargo run --package bftd -- new-chain my-awesome-chain 127.0.0.1:{8080..8083} --leader-timeout-ms 2000 --empty-commit-timeout-ms --http-server-base-port 9080
 ```
 Run all nodes locally:
 ```
@@ -86,3 +86,48 @@ We provide two packages:
 * `bftd-core` provides consensus engine. It has much fewer dependencies, but you would need to provide entry-points for users yourself.
 * `bftd-server` provides additional wrappers on top of `bftd-core`. It also contains a simple HTTP server that can be used to send transactions and tail commits. 
 
+We are going to provide instructions on how integrate with the `bftd-server` crate:
+
+First, you need to generate configs same as above.
+
+After that you can start the `Node` instance with the given config:
+
+```rust
+fn main() -> anyhow::Result<()> {
+    let genesis = Arc::new(Genesis::load("genesis_path").unwrap());
+    let node = Node::load("node_directory_path", genesis).unwrap();
+    let handle = node.start().unwrap();
+    let runtime = handle.runtime().clone();
+    runtime.block_on(async {
+        handle.send_transaction(vec![1, 2, 3]).await;
+        println!("Transaction was sent, waiting for it to be committed");
+        let mut commit_reader = handle.read_commits_from(0);
+        loop {
+            let commit = commit_reader
+                .recv_commit()
+                .await
+                .expect("Server has stopped before we got expected commit");
+            for (block, transactions) in commit.blocks.iter() {
+                for transaction in transactions.iter_slices() {
+                    if transaction == &[1, 2, 3] {
+                        println!(
+                            "Our transaction is found in block {} committed by commit {}!",
+                            block.reference(),
+                            hex::encode(&commit.info.commit_hash()[..4])
+                        );
+                        return;
+                    }
+                }
+            }
+        }
+    });
+    handle.stop();
+}
+```
+
+You can run a working example from `examples` directory (after running new-chain command):
+```
+cargo run --example embedded -- clusters/<chain_name>/genesis clusters/<chain_name>/<node_number>
+```
+
+Note that you need to run at least 3 different nodes(if the total cluster is 4 nodes) to produce a commit

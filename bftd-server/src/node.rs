@@ -1,6 +1,7 @@
+use crate::commit_reader::CommitReader;
 use crate::config::BftdConfig;
 use crate::load_gen::{LoadGen, LoadGenConfig, LoadGenMetrics};
-use crate::mempool::{BasicMempool, TransactionsPayloadBlockFilter};
+use crate::mempool::{BasicMempool, BasicMempoolClient, TransactionsPayloadBlockFilter};
 use crate::prometheus::{start_prometheus_server, PrometheusJoinHandle};
 use crate::server::BftdServer;
 use bftd_core::block_cache::BlockCache;
@@ -39,8 +40,8 @@ pub struct NodeHandle {
     server_handle: Option<BftdServer>,
     runtime: Arc<Runtime>,
     load_gen_handle: Option<JoinHandle<()>>,
-    #[allow(dead_code)]
     store: Arc<BlockCache<RocksStore>>,
+    mempool_client: BasicMempoolClient,
 }
 
 impl Node {
@@ -147,7 +148,11 @@ impl Node {
         };
         let load_gen_handle = if let Some(load_gen) = load_gen {
             let load_gen_metrics = LoadGenMetrics::new_in_registry(&registry);
-            Some(LoadGen::start(load_gen, mempool_client, load_gen_metrics))
+            Some(LoadGen::start(
+                load_gen,
+                mempool_client.clone(),
+                load_gen_metrics,
+            ))
         } else {
             None
         };
@@ -158,6 +163,7 @@ impl Node {
             server_handle,
             load_gen_handle,
             store: block_store,
+            mempool_client,
         })
     }
 }
@@ -197,20 +203,40 @@ impl NodeHandle {
         syncer.stop().await;
     }
 
-    #[allow(dead_code)]
     pub fn stop(self) {
         // This clone is needed so that runtime is dropped here, rather than in the context of stop_inner
         let runtime = self.runtime.clone();
         runtime.block_on(self.stop_inner());
     }
 
-    #[cfg(test)]
     pub fn store(&self) -> &Arc<BlockCache<RocksStore>> {
         &self.store
     }
 
-    #[cfg(test)]
     pub fn commit_receiver(&self) -> &tokio::sync::watch::Receiver<Option<u64>> {
         self.syncer.last_commit_receiver()
+    }
+
+    pub fn mempool_client(&self) -> &BasicMempoolClient {
+        &self.mempool_client
+    }
+
+    pub fn runtime(&self) -> &Arc<Runtime> {
+        &self.runtime
+    }
+
+    pub async fn send_transaction(&self, transaction: Vec<u8>) {
+        self.mempool_client
+            .send_transaction(transaction)
+            .await
+            .expect("Mempool has stopped")
+    }
+
+    pub fn read_commits_from(&self, from_index_included: u64) -> CommitReader {
+        CommitReader::start(
+            self.store.clone(),
+            self.commit_receiver().clone(),
+            from_index_included,
+        )
     }
 }
