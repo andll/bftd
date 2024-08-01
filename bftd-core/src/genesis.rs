@@ -3,6 +3,8 @@ use crate::committee::{Committee, ValidatorInfo};
 use crate::crypto::blake2_hash;
 use crate::protocol_config::ProtocolConfig;
 use bytes::Bytes;
+use std::fs;
+use std::path::Path;
 use std::sync::Arc;
 
 const GENERATION_LENGTH: usize = 32;
@@ -33,7 +35,11 @@ impl Genesis {
         }
     }
 
-    pub fn load(data: Bytes) -> bincode::Result<Self> {
+    pub fn load(path: impl AsRef<Path>) -> anyhow::Result<Self> {
+        Ok(Self::load_bytes(fs::read(path)?.into())?)
+    }
+
+    pub fn load_bytes(data: Bytes) -> bincode::Result<Self> {
         let (generation, validators, protocol_config) = bincode::deserialize(&data)?;
         let chain_id = ChainId(blake2_hash(&data));
         Ok(Self {

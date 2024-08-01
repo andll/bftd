@@ -124,7 +124,7 @@ impl TestCluster {
         path: PathBuf,
         nodes_to_start: Option<Vec<usize>>,
     ) -> anyhow::Result<Vec<NodeHandle>> {
-        let genesis = Genesis::load(fs::read(Self::genesis_path(&path))?.into())?;
+        let genesis = Genesis::load(Self::genesis_path(&path))?;
         let genesis = Arc::new(genesis);
         let nodes_to_start =
             nodes_to_start.unwrap_or_else(|| (0..genesis.validators().len()).collect());
@@ -152,7 +152,7 @@ impl TestCluster {
 }
 
 pub fn start_node(path: PathBuf) -> anyhow::Result<NodeHandle> {
-    let genesis = Genesis::load(fs::read(TestCluster::genesis_path(&path))?.into())?;
+    let genesis = Genesis::load(TestCluster::genesis_path(&path))?;
     let genesis = Arc::new(genesis);
     let node = Node::load(&path, genesis)?;
     let handle = node.start()?;
