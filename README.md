@@ -18,7 +18,15 @@ Under the lower load, bftd commit latency across 4 regions goes down to **440ms*
 * **Deterministic finality**. Protocol gives explicit (deterministic) signal when transaction is final. Some consensus protocols (for example bitcoin PoW) only provide probabilistic finality. 
 * **Low finality and high throughput**. Bftd employs DAG-based consensus protocol based on uncertified DAG approach, allowing it to reach low latency combined with very high throughput. 
 * **Coupling between consensus and transaction dissemination**. When using bftd, a client only needs to submit transaction to a single validator. The transaction will be included in the chain even if this validator does not get a chance to be a leader. With other consensus protocols, for example, HotStuff picking the right validator can be essential to minimizing client latency.
- 
+
+# State of the project
+
+This is still early development, so bugs are possible and likely.
+That said, you can already run bftd locally or on the cluster of real
+machines and integrate with itm by either using HTTP API, or by embedding it in your application.
+
+The code also has not gone through audit at this time.
+
 # Running bftd locally
 
 You can run bftd cluster locally.
