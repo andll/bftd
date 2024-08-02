@@ -1,8 +1,8 @@
-What is BFTd?
+# What is bftd?
 
-bftd is an implementation proof-of-stake byzantine fault-tolerant consensus. bftd implements Oxa consensus protocol (which is built on top of Mysticeti consensus) — a cutting-edge DAG-based consensus protocol designed for low latency and high throughput.
+bftd is an implementation proof-of-stake byzantine fault-tolerant consensus. bftd implements Adelie consensus protocol (which is built on top of Mysticeti consensus) — a cutting-edge DAG-based consensus protocol designed for low latency and high throughput.
 
-Oxa protocol couples consensus with transaction dissemination which helps to reduce overall latency and simplify usage.
+Adelie protocol couples consensus with transaction dissemination, which helps to reduce overall latency and simplify usage.
 
 # Performance
 `bftd` is likely the most performant BFT consensus engine out there.
@@ -141,3 +141,10 @@ cargo run --example embedded -- clusters/<chain_name>/genesis clusters/<chain_na
 ```
 
 Note that you need to run at least 3 different nodes(if the total cluster is 4 nodes) to produce a commit
+
+# Where does the protocol name (Adelie) come from?
+
+Many DAG-based BFT consensus protocols are named after marine animals: 
+narhwal and mysticeti are marine mammals, bullshark and hammerhead are marine fish.
+
+We continue the tradition by naming our protocol after a marine bird - Adélie penguin.
