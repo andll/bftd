@@ -1,3 +1,8 @@
+[![Twitter][twitter-badge]][twitter-url]
+
+[twitter-badge]: https://img.shields.io/twitter/follow/bftdsys
+[twitter-url]: https://twitter.com/bftdsys
+
 # What is bftd?
 
 bftd is an implementation proof-of-stake byzantine fault-tolerant consensus. bftd implements Adelie consensus protocol (which is built on top of Mysticeti consensus) — a cutting-edge DAG-based consensus protocol designed for low latency and high throughput.
