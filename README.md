@@ -148,3 +148,7 @@ Many DAG-based BFT consensus protocols are named after marine animals:
 narhwal and mysticeti are marine mammals, bullshark and hammerhead are marine fish.
 
 We continue the tradition by naming our protocol after a marine bird - Adélie penguin.
+
+# License
+
+This project is licensed under the Apache2 license. See [LICENSE](LICENSE).
