@@ -5,32 +5,32 @@
 
 # What is bftd?
 
-bftd is an implementation proof-of-stake byzantine fault-tolerant consensus. bftd implements Adelie consensus protocol (which is built on top of Mysticeti consensus) — a cutting-edge DAG-based consensus protocol designed for low latency and high throughput.
+bftd is an implementation of proof-of-stake byzantine fault-tolerant consensus. bftd implements Adelie consensus protocol (which is built on top of Mysticeti consensus) — a cutting-edge DAG-based consensus protocol designed for low latency and high throughput.
 
 Adelie protocol couples consensus with transaction dissemination, which helps to reduce overall latency and simplify usage.
 
 # Performance
-`bftd` is likely the most performant BFT consensus engine out there.
+`bftd` is likely the most performant BFT consensus engine out there as of today.
 
-A small cluster of 12 nodes of an inexpensive AWS instance type c7gn.xlarge, distributed across 4 regions globally (us-west, us-east, eu-west and ap-northeast) **bftd can deliver 450K TPS with a 630 millisecond finality**. (With a transaction size of 512 bytes)
+On a small cluster of 12 nodes of an inexpensive AWS instance type c7gn.xlarge, distributed across 4 regions globally (us-west, us-east, eu-west and ap-northeast) **bftd can deliver 450K TPS with a 630 millisecond finality**. (With a transaction size of 512 bytes)
 
-Under the lower load, bftd commit latency across 4 regions goes down to **440ms**.
+Under lower load conditions, bftd commit latency across 4 regions goes down to **440ms**.
 
 # What are the main features of bftd consensus?
 
 * **Proof of stake**. Each validator(node) is assigned certain stake in the system. The safety properties of the system are based on the assumption that at least 2/3 of the total stake follow the protocol.
-* **Byzantine fault-tolerance**. Protocol maintains its properties as long as less than 1/3 validators in the network are malicious. 
+* **Byzantine fault-tolerance**. Protocol maintains its properties as long as only 1/3 validators in the network are malicious. 
 * **Deterministic finality**. Protocol gives explicit (deterministic) signal when transaction is final. Some consensus protocols (for example bitcoin PoW) only provide probabilistic finality. 
-* **Low finality and high throughput**. Bftd employs DAG-based consensus protocol based on uncertified DAG approach, allowing it to reach low latency combined with very high throughput. 
+* **Low finality and high throughput**. bftd employs DAG-based consensus protocol based on uncertified DAG approach, allowing it to reach low latency combined with very high throughput. 
 * **Coupling between consensus and transaction dissemination**. When using bftd, a client only needs to submit transaction to a single validator. The transaction will be included in the chain even if this validator does not get a chance to be a leader. With other consensus protocols, for example, HotStuff picking the right validator can be essential to minimizing client latency.
 
 # State of the project
 
-This is still early development, so bugs are possible and likely.
+This is still in early development, so bugs are possible and likely.
 That said, you can already run bftd locally or on the cluster of real
 machines and integrate with itm by either using HTTP API, or by embedding it in your application.
 
-The code also has not gone through audit at this time.
+The code also has not gone through an audit at this time.
 
 # Running bftd locally
 
@@ -54,12 +54,12 @@ curl -XPOST http://127.0.0.1:9080/send -d 'ABCDEFG'
 
 # Running bftd on the real cluster 
 
-This section gives guidance on how to setup bftd in a real cluster.
+This section gives guidance on how to setup bftd on a real cluster.
 
 The process of setting up bftd consists of two steps:
 
-- Generating genesis file and configs for your chain (new-chain command). This step will generate configuration files for each node locally, it is useful for running a testnet, but since all the keys are generated on a single machine, a different process should be used for production networks.  
-- Deploying configuration files to the machines and running bftd.
+* **Step #1**: Generating genesis file and configs for your chain (new-chain command). This step will generate configuration files for each node locally, it is useful for running a testnet, but since all the keys are generated on a single machine, a different process should be used for production networks.  
+* **Step #2**: Deploying configuration files to the machines and running bftd.
 
 You need to know IP addresses of validators ahead of time. 
 To bootstrap your testnet you can run the following command locally:
@@ -101,9 +101,9 @@ We provide two packages:
 
 We are going to provide instructions on how integrate with the `bftd-server` crate:
 
-First, you need to generate configs same as above.
+First, you need to generate configs as described above.
 
-After that you can start the `Node` instance with the given config:
+After that, you can start the `Node` instance with the given config:
 
 ```rust
 fn main() -> anyhow::Result<()> {
@@ -145,7 +145,7 @@ You can run a working example from `examples` directory (after running new-chain
 cargo run --example embedded -- clusters/<chain_name>/genesis clusters/<chain_name>/<node_number>
 ```
 
-Note that you need to run at least 3 different nodes(if the total cluster is 4 nodes) to produce a commit
+Note, that you need to run at least 3 different nodes(if the total cluster is 4 nodes) to produce a commit
 
 # Where does the protocol name (Adelie) come from?
 
