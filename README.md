@@ -5,7 +5,7 @@
 
 # What is bftd?
 
-bftd is an implementation of proof-of-stake byzantine fault-tolerant consensus. bftd implements Adelie consensus protocol (which is built on top of Mysticeti consensus) — a cutting-edge DAG-based consensus protocol designed for low latency and high throughput.
+bftd is an implementation of proof-of-stake byzantine fault-tolerant consensus. bftd implements [Adelie](https://arxiv.org/abs/2408.02000) consensus protocol (which is built on top of Mysticeti consensus) — a cutting-edge DAG-based consensus protocol designed for low latency and high throughput.
 
 Adelie protocol couples consensus with transaction dissemination, which helps to reduce overall latency and simplify usage.
 
