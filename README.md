@@ -1,7 +1,7 @@
-[![Twitter][twitter-badge]][twitter-url]
+[![Discord][discord-badge]][discord-url]
 
-[twitter-badge]: https://img.shields.io/twitter/follow/bftdsys
-[twitter-url]: https://twitter.com/bftdsys
+[discord-badge]: https://img.shields.io/discord/1269357435194314957?style=flat
+[discord-url]: https://discord.gg/SvPZWfvu
 
 # What is bftd?
 
