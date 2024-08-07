@@ -149,32 +149,36 @@ cargo run --example embedded -- clusters/<chain_name>/genesis clusters/<chain_na
 
 Note, that you need to run at least 3 different nodes(if the total cluster is 4 nodes) to produce a commit
 
-# Glossary 
+# Glossary
+
 
 ## What is consensus?
 
-Consensus algorithm allows a cluster of distributed machines to agree on certain state of the system.
+
+Consensus algorithm allows a cluster of distributed machines to agree on a certain state of the system.
 
 Most of the time, rather than agreeing on the whole state,
 systems typically have implicit agreement on the initial state of the system,
 and consensus then replicates an ordered list of transactions that change that state.
 
 “Traditional” [consensus](https://en.wikipedia.org/wiki/Consensus_(computer_science)) protocols ([Paxos](https://en.wikipedia.org/wiki/Paxos_(computer_science)), [Raft](https://en.wikipedia.org/wiki/Raft_(algorithm)), etc)
-can replicate the state in a fault-tolerant manner in presence of hardware failures - 
-networking delays, reordering of networking messages, machines failures, etc. 
-Traditional consensus is typically used by databases such as [Google Spanner](https://en.wikipedia.org/wiki/Spanner_(database)) to concisely 
+can replicate the state in a fault-tolerant manner in presence of hardware failures -
+networking delays, reordering of networking messages, machines failures, etc.
+Traditional consensus is typically used by databases such as [Google Spanner](https://en.wikipedia.org/wiki/Spanner_(database)) to concisely
 replicate data between different machines in case some of them fail.
 
 ## What does Byzantine Fault Tolerant mean?
 
-[Byzantine](https://en.wikipedia.org/wiki/Byzantine_fault) Fault Tolerant (BFT) consensus protocols in addition
-to handling hardware failures can also handle malicious nodes that intentionally try to subvert the protocol.
 
-This is typically not needed for the databases, since all machines are owned by the same company. 
-BFT consensus is widely used in blockchain, since the individual blockchain nodes(validators) are owned by 
-different people, some of them might use a malicious version of software that tries to subvert the protocol. 
+[Byzantine](https://en.wikipedia.org/wiki/Byzantine_fault) Fault Tolerant (BFT) consensus protocols, in addition
+to handling hardware failures, can also handle malicious nodes that intentionally try to subvert the protocol.
 
-BFT consensus protocols can consistently replicate data for even in the presence of such malicious nodes.
+This is typically not needed for the databases, since all machines operate within a trusted system of a company.
+BFT consensus is widely used in blockchain, since the individual blockchain nodes(validators) are owned by
+different people, some of them might use a malicious version of software that tries to subvert the protocol.
+
+BFT consensus protocols can consistently replicate data even in the presence of such malicious nodes.
+
 
 ## What kind of BFT protocols are out there?
 
@@ -182,7 +186,7 @@ Early blockchains such as bitcoin used Proof-of-Work consensus,
 which is fairly simple but requires a lot of computational resources to maintain its safety properties.
 
 **Proof-of-Work** consensus also has long non-deterministic commit(finality) times,
-low throughput and is typically associated with high transaction cost. 
+low throughput and is typically associated with high transaction cost.
 
 The **Proof-of-Stake** consensus on the contrary can achieve a very low latency,
 high throughput and requires significantly less computational resources
@@ -191,20 +195,23 @@ that typically result in much lower transaction fees for the blockchain.
 ## What is DAG-based consensus protocol?
 
 Within the **Proof-of-Stake** family,
-some BFT consensus protocols such as [HotStuff](https://arxiv.org/abs/1803.05069) 
-are structured similarly to the traditional consensus protocols
-where leader proposes the list of transactions and multiphase message exchange is then used to commit the change.
+some BFT consensus protocols such as [HotStuff](https://arxiv.org/abs/1803.05069)
+are structured similar to the traditional consensus protocols
+where the leader proposes the list of transactions and multiphase message exchange is then used to commit the change.
+
 
 The newer family of Proof-of-Stake BFT consensus protocols are so called **DAG-based BFT consensus** protocols.
-DAG-based consensus protocols couple consensus with the data-dissemination, allowing everyone, 
-not just current leader to share transactions in the process of reaching the consensus.
+DAG-based consensus protocols couple consensus with the data-dissemination which allows everyone (and
+not just the current leader) to share the transactions in the process of reaching the consensus.
+
 
 This combination of data dissemination and consensus is shown to allow very high throughput.
-The narwhal/bullshark, one of the earlier DAG-based consensus protocols, can achieve 100K TPS, but trade high TPS for 
+The narwhal/bullshark, one of the earlier DAG-based consensus protocols, can achieve 100K TPS, but trade high TPS for
 a significantly increased latency.
 
-The newer protocols, such as Adelie protocol implemented in bftd however, combine extremely high throughput with the 
-low latency of traditional  consensus protocols. 
+
+The newer protocols, such as Adelie protocol implemented in bftd combine extremely high throughput with the
+low latency of traditional consensus protocols.
 
 
 # Where does the protocol name (Adelie) come from?
