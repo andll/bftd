@@ -22,6 +22,8 @@ pub const MINIMUM_WAVE_LENGTH: u64 = 3;
 
 pub use universal_committer::{UniversalCommitter, UniversalCommitterBuilder};
 
+pub use universal_committer::LeaderElection;
+
 /// The status of every leader output by the committers. While the core only cares about committed
 /// leaders, providing a richer status allows for easier debugging, testing, and composition with
 /// advanced commit strategies.

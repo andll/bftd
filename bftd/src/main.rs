@@ -1,5 +1,6 @@
 use anyhow::bail;
 use bftd_core::block::ValidatorIndex;
+use bftd_core::consensus::LeaderElection;
 use bftd_core::protocol_config::ProtocolConfigBuilder;
 use bftd_server::node::NodeHandle;
 use bftd_server::test_cluster::{start_node, TestCluster};
@@ -23,6 +24,12 @@ struct NewChainArgs {
     peer_addresses: Vec<String>,
     #[arg(
         long,
+        short = 's',
+        help = "Pre-defined set of configs to use. Currently only support 'low-volume'"
+    )]
+    preset: Option<String>,
+    #[arg(
+        long,
         help = "Do not check if peer addresses can be resolved locally when generating genesis"
     )]
     no_check_peer_address: bool,
@@ -40,7 +47,6 @@ struct NewChainArgs {
     prometheus_bind: Option<SocketAddr>,
     #[arg(
         long,
-        short = 's',
         help = "Bind address for bftd-server server. Bftd server is not started if this(or http_server_base_port) is not set.",
         conflicts_with = "http_server_base_port"
     )]
@@ -65,13 +71,20 @@ struct NewChainArgs {
         help = "Path to template file for prometheus configuration. If not set prometheus configuration won't be generated."
     )]
     prometheus_template: Option<PathBuf>,
-    #[arg(long, short = 'l', help = "Leader timeout")]
+    #[arg(long, short = 'l', help = "Leader timeout", conflicts_with = "preset")]
     leader_timeout_ms: Option<u64>,
-    #[arg(long, short = 'e', num_args = 0..=1, default_missing_value = Some(""), help ="Empty commit timeout allows to slow down empty blocks generation if there is nothing to propose or commit. Specify this argument without value to generate empty commit timeout automatically based on leader timeout. If argument is not specified empty commit timeout feature is not used and blocks are generated as fast as possible.")]
+    #[arg(long,
+        short = 'e',
+        num_args = 0..=1,
+        default_missing_value = Some(""),
+        help ="Empty commit timeout allows to slow down empty blocks generation if there is nothing to propose or commit. Specify this argument without value to generate empty commit timeout automatically based on leader timeout. If argument is not specified empty commit timeout feature is not used and blocks are generated as fast as possible.",
+        conflicts_with = "preset"
+    )]
     empty_commit_timeout_ms: Option<String>,
     #[arg(
         long,
-        help = "Enables or disables critical_block_check protocol config. Enabled by default"
+        help = "Enables or disables critical_block_check protocol config. Enabled by default",
+        conflicts_with = "preset"
     )]
     critical_block_check: Option<bool>,
     #[arg(
@@ -144,6 +157,16 @@ fn handle_new_chain(args: NewChainArgs) -> anyhow::Result<()> {
         }
     }
     let mut protocol_config = ProtocolConfigBuilder::default();
+    if let Some(preset) = args.preset {
+        if &preset == "low-volume" {
+            protocol_config.with_leader_timeout(Duration::from_secs(1));
+            protocol_config.with_recommended_empty_commit_timeout();
+            protocol_config.with_critical_block_check(false);
+            protocol_config.with_leader_election(LeaderElection::MultiLeader(1));
+        } else {
+            bail!("Unknown preset {preset}. Currently only supported preset is low-volume");
+        }
+    }
     if let Some(leader_timeout_ms) = args.leader_timeout_ms {
         protocol_config.with_leader_timeout(Duration::from_millis(leader_timeout_ms));
         println!("Using commit timeout {leader_timeout_ms} ms")

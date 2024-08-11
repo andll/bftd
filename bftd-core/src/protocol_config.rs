@@ -1,3 +1,4 @@
+use crate::consensus::LeaderElection;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -5,6 +6,8 @@ use std::time::Duration;
 pub struct ProtocolConfig {
     /// How much time to wait for blocks from round leaders
     pub(crate) leader_timeout: Duration,
+    /// How many leaders we have per round
+    pub(crate) leader_election: LeaderElection,
     /// How much time to wait before proposing on round if all uncommitted blocks are empty.
     /// Limits the number of empty blocks generated under the low load.
     ///
@@ -21,6 +24,7 @@ impl Default for ProtocolConfig {
     fn default() -> Self {
         Self {
             leader_timeout: Duration::from_secs(2),
+            leader_election: LeaderElection::All,
             empty_commit_timeout: Duration::ZERO,
             critical_block_check: true,
         }
@@ -42,6 +46,10 @@ impl ProtocolConfigBuilder {
     }
     pub fn leader_timeout(&self) -> Duration {
         self.0.leader_timeout
+    }
+
+    pub fn with_leader_election(&mut self, leader_election: LeaderElection) {
+        self.0.leader_election = leader_election;
     }
 
     pub fn with_empty_commit_timeout(&mut self, empty_commit_timeout: Duration) {
@@ -66,6 +74,9 @@ impl ProtocolConfigBuilder {
         }
         if self.0.leader_timeout < self.0.empty_commit_timeout * 2 {
             tracing::error!("Protocol might not work well if leader_timeout({:?}) is less double of empty_commit_timeout({:?})", self.0.leader_timeout, self.0.empty_commit_timeout);
+        }
+        if self.0.critical_block_check && self.0.leader_election != LeaderElection::All {
+            tracing::error!("When critical block check is set, performance can be impacted if leader election is not set to All(current selection {:?}).", self.0.leader_election);
         }
         self.0
     }

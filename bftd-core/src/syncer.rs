@@ -144,7 +144,7 @@ impl Syncer {
         let committer =
             UniversalCommitterBuilder::new(committee.clone(), block_store.clone(), metrics.clone())
                 .with_pipeline(true)
-                .with_all_leaders()
+                .with_leader_election(protocol_config.leader_election)
                 .build();
         let validator_index = core.validator_index();
         let last_proposed_round = core.last_proposed_round();

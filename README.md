@@ -39,7 +39,7 @@ The code also has not gone through an audit at this time.
 You can run bftd cluster locally.
 Set up the cluster:
 ```
-cargo run --package bftd -- new-chain my-awesome-chain 127.0.0.1:{8080..8083} --leader-timeout-ms 1000 --empty-commit-timeout-ms --http-server-base-port 9080
+cargo run --package bftd -- new-chain my-awesome-chain 127.0.0.1:{8080..8083} --preset low-volume --http-server-base-port 9080
 ```
 Run all nodes locally:
 ```

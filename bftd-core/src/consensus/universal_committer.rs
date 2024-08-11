@@ -8,6 +8,7 @@ use crate::metrics::Metrics;
 use crate::store::BlockReader;
 use rand::prelude::{SliceRandom, StdRng};
 use rand::SeedableRng;
+use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, sync::Arc};
 
 use super::{base_committer::BaseCommitter, CommitDecision, LeaderStatus, DEFAULT_WAVE_LENGTH};
@@ -116,7 +117,7 @@ pub struct UniversalCommitterBuilder<B> {
     pipeline: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum LeaderElection {
     All,
     MultiLeader(u64),
@@ -147,6 +148,11 @@ impl<B: BlockReader + Clone> UniversalCommitterBuilder<B> {
 
     pub fn with_all_leaders(mut self) -> Self {
         self.leader_election = LeaderElection::All;
+        self
+    }
+
+    pub fn with_leader_election(mut self, leader_election: LeaderElection) -> Self {
+        self.leader_election = leader_election;
         self
     }
 
