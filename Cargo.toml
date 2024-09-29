@@ -1,3 +1,3 @@
 [workspace]
-members = ["bftd-core", "bftd-server", "bftd"]
+members = ["bftd-core", "bftd-server", "bftd", "bftd-client"]
 resolver = "2"
