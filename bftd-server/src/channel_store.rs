@@ -17,7 +17,7 @@ pub struct ChannelStore {
     notifiers: Mutex<HashMap<ChannelId, watch::Sender<u64>>>,
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Serialize, Deserialize, Eq, PartialEq, Hash, Debug)]
 pub struct ChannelId(u32);
 
 impl ChannelStore {
@@ -138,11 +138,14 @@ impl ChannelStore {
     }
 
     fn options() -> Options {
-        Options::default()
+        let mut options = Options::default();
+        options.create_if_missing(true);
+        options.create_missing_column_families(true);
+        options
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ChannelElementKey {
     channel: ChannelId,
     commit_index: u64,
@@ -224,7 +227,15 @@ impl<'de> Deserialize<'de> for ChannelElementKey {
             {
                 let mut split = v.split('-');
                 let channel = parse::<E>(split.next())?;
-                let epoch = parse::<E>(split.next())?;
+                let epoch = split.next();
+                if epoch.is_none() {
+                    return Ok(ChannelElementKey {
+                        channel: ChannelId(channel),
+                        commit_index: 0,
+                        element: 0,
+                    });
+                }
+                let epoch = parse::<E>(epoch)?;
                 let commit = parse::<E>(split.next())?;
                 let element = parse::<E>(split.next())?;
                 if epoch != 0 {
@@ -246,5 +257,32 @@ fn parse<E: Error>(s: Option<&str>) -> Result<u32, E> {
         u32::from_str_radix(s, 16).map_err(|_| E::custom("Failed to parse element"))
     } else {
         Err(E::custom("Not enough elements"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_channel_element_serde() {
+        assert_eq!(
+            p("\"15\""),
+            ChannelElementKey {
+                channel: ChannelId(0x15),
+                commit_index: 0,
+                element: 0,
+            }
+        );
+        let k = ChannelElementKey {
+            channel: ChannelId(20),
+            commit_index: 30,
+            element: 40,
+        };
+        assert_eq!(p(&serde_json::to_string(&k).unwrap()), k)
+    }
+
+    fn p(s: &str) -> ChannelElementKey {
+        serde_json::from_str(s).unwrap()
     }
 }
