@@ -1,7 +1,7 @@
 use crate::mempool::TransactionsPayloadReader;
 use bftd_core::block::Block;
 use bftd_core::consensus::Commit;
-use bftd_core::store::{BlockStore, CommitStore};
+use bftd_core::store::{BlockReader, CommitStore};
 use std::sync::Arc;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
@@ -23,7 +23,7 @@ struct CommitReaderTask<B> {
 }
 
 impl CommitReader {
-    pub fn start<B: BlockStore + CommitStore>(
+    pub fn start<B: BlockReader + CommitStore>(
         store: B,
         commit_receiver: watch::Receiver<Option<u64>>,
         index_from_included: u64,
@@ -51,7 +51,7 @@ impl Drop for CommitReader {
     }
 }
 
-impl<B: BlockStore + CommitStore> CommitReaderTask<B> {
+impl<B: BlockReader + CommitStore> CommitReaderTask<B> {
     pub async fn run(mut self, mut next_index: u64) {
         loop {
             let last_excluded = self

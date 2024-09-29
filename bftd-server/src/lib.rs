@@ -1,3 +1,6 @@
+mod channel_payload;
+pub mod channel_server;
+mod channel_store;
 mod commit_reader;
 pub mod config;
 mod load_gen;

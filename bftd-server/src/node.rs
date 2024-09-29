@@ -1,3 +1,4 @@
+use crate::channel_server::BftdChannelServer;
 use crate::commit_reader::CommitReader;
 use crate::config::BftdConfig;
 use crate::load_gen::{LoadGen, LoadGenConfig, LoadGenMetrics};
@@ -18,8 +19,10 @@ use futures::future::join_all;
 use futures::FutureExt;
 use prometheus::Registry;
 use std::fs;
+use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::runtime;
@@ -37,7 +40,7 @@ pub struct Node {
 pub struct NodeHandle {
     syncer: Arc<Syncer>,
     prometheus_handle: Option<PrometheusJoinHandle>,
-    server_handle: Option<BftdServer>,
+    server_handle: Option<Box<dyn Stoppable>>,
     runtime: Arc<Runtime>,
     load_gen_handle: Option<JoinHandle<()>>,
     store: Arc<BlockCache<RocksStore>>,
@@ -99,7 +102,8 @@ impl Node {
         .await?;
         let registry = Registry::new();
         let metrics = Metrics::new_in_registry(&registry, &committee);
-        let block_store = RocksStore::open(&self.storage_path, &committee, metrics.clone())?;
+        let block_store =
+            RocksStore::open(&self.storage_path.join("bftd"), &committee, metrics.clone())?;
         for genesis_block in committee.genesis_blocks() {
             if !block_store.exists(genesis_block.reference()) {
                 block_store.put(Arc::new(genesis_block));
@@ -134,15 +138,29 @@ impl Node {
 
         let syncer = Arc::new(syncer);
         let server_handle = if let Some(http_server_bind) = self.config.http_server_bind {
-            Some(
-                BftdServer::start(
-                    http_server_bind,
-                    mempool_client.clone(),
-                    block_store.clone(),
-                    syncer.clone(),
-                )
-                .await?,
-            )
+            let handle = if self.config.use_channel_server.unwrap_or(true) {
+                Box::new(
+                    BftdChannelServer::start(
+                        http_server_bind,
+                        mempool_client.clone(),
+                        block_store.clone(),
+                        syncer.clone(),
+                        self.storage_path.join("channels"),
+                    )
+                    .await?,
+                ) as Box<dyn Stoppable>
+            } else {
+                Box::new(
+                    BftdServer::start(
+                        http_server_bind,
+                        mempool_client.clone(),
+                        block_store.clone(),
+                        syncer.clone(),
+                    )
+                    .await?,
+                ) as Box<dyn Stoppable>
+            };
+            Some(handle)
         } else {
             None
         };
@@ -190,7 +208,7 @@ impl NodeHandle {
             futures.push(load_gen.map(|_| ()).boxed());
         }
         if let Some(server) = self.server_handle {
-            futures.push(server.stop().boxed());
+            futures.push(server.stop());
         }
         if let Some(prometheus) = self.prometheus_handle {
             prometheus.abort();
@@ -238,5 +256,21 @@ impl NodeHandle {
             self.commit_receiver().clone(),
             from_index_included,
         )
+    }
+}
+
+trait Stoppable: Send + Sync + 'static {
+    fn stop(self: Box<Self>) -> Pin<Box<dyn Future<Output = ()> + Send>>;
+}
+
+impl Stoppable for BftdServer {
+    fn stop(self: Box<Self>) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+        BftdServer::stop(*self).boxed()
+    }
+}
+
+impl Stoppable for BftdChannelServer {
+    fn stop(self: Box<Self>) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+        BftdChannelServer::stop(*self).boxed()
     }
 }

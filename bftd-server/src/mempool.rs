@@ -17,7 +17,7 @@ pub struct BasicMempoolClient {
     sender: mpsc::Sender<Vec<u8>>,
 }
 
-pub const MAX_TRANSACTION: usize = 10 * 1024;
+pub const MAX_TRANSACTION: usize = (64 + 2) * 1024 * 1024;
 const TRANSACTION_SIZE_EXPECTED: usize = 256;
 const TRANSACTIONS_PER_BLOCK_EXPECTED: usize = MAX_BLOCK_PAYLOAD / TRANSACTION_SIZE_EXPECTED;
 
@@ -182,6 +182,10 @@ impl TransactionsPayloadReader {
 
     pub fn iter_slices(&self) -> impl Iterator<Item = &[u8]> {
         (0..self.len()).map(|i| self.get(i))
+    }
+
+    pub fn iter_bytes(&self) -> impl Iterator<Item = Bytes> + '_ {
+        (0..self.len()).map(|i| self.get_bytes(i).unwrap())
     }
 }
 

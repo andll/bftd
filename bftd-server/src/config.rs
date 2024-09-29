@@ -8,6 +8,7 @@ pub struct BftdConfig {
     pub validator_index: ValidatorIndex,
     pub prometheus_bind: Option<SocketAddr>,
     pub http_server_bind: Option<SocketAddr>,
+    pub use_channel_server: Option<bool>,
     // Load gen config in form transaction_size[::tps_limit]
     pub load_gen: Option<String>,
 }

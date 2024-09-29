@@ -49,6 +49,7 @@ impl TestCluster {
                 prometheus_bind,
                 http_server_bind: http_server_bind(validator_index),
                 load_gen: load_gen.clone(),
+                use_channel_server: None,
             };
             configs.push(config);
         }
