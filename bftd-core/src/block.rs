@@ -63,7 +63,7 @@ pub struct ValidatorIndex(pub u64);
 )]
 pub struct Round(pub u64);
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ChainId(pub [u8; CHAIN_ID_LENGTH]);
 
 #[derive(Default, Clone, Copy, PartialOrd, PartialEq, Ord, Eq, Hash, Serialize, Deserialize)]
@@ -633,6 +633,18 @@ impl fmt::Display for Block {
             write!(f, "{},", parent)?;
         }
         write!(f, "]")
+    }
+}
+
+impl fmt::Debug for ChainId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", hex::encode(&self.0))
+    }
+}
+
+impl fmt::Display for ChainId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 

@@ -1,35 +1,4 @@
 {
-  "__inputs": [
-    {
-      "name": "DS_GRAFANACLOUD-BFTD-PROM",
-      "label": "grafanacloud-bftd-prom",
-      "description": "",
-      "type": "datasource",
-      "pluginId": "prometheus",
-      "pluginName": "Prometheus"
-    }
-  ],
-  "__elements": {},
-  "__requires": [
-    {
-      "type": "grafana",
-      "id": "grafana",
-      "name": "Grafana",
-      "version": "11.2.0-73451"
-    },
-    {
-      "type": "datasource",
-      "id": "prometheus",
-      "name": "Prometheus",
-      "version": "1.0.0"
-    },
-    {
-      "type": "panel",
-      "id": "timeseries",
-      "name": "Time series",
-      "version": ""
-    }
-  ],
   "annotations": {
     "list": [
       {
@@ -49,13 +18,13 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": null,
+  "id": 1,
   "links": [],
   "panels": [
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_GRAFANACLOUD-BFTD-PROM}"
+        "uid": "bdzw6ff2bnc3kf"
       },
       "fieldConfig": {
         "defaults": {
@@ -124,7 +93,7 @@
           "calcs": [],
           "displayMode": "list",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": false
         },
         "tooltip": {
           "mode": "single",
@@ -135,10 +104,10 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_GRAFANACLOUD-BFTD-PROM}"
+            "uid": "bdzw6ff2bnc3kf"
           },
           "editorMode": "code",
-          "expr": "rate(load_gen_sent_transactions[1m])",
+          "expr": "sum(rate(load_gen_sent_transactions[1m]))",
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -150,8 +119,9 @@
     },
     {
       "datasource": {
+        "default": true,
         "type": "prometheus",
-        "uid": "${DS_GRAFANACLOUD-BFTD-PROM}"
+        "uid": "bdzw6ff2bnc3kf"
       },
       "fieldConfig": {
         "defaults": {
@@ -231,23 +201,23 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_GRAFANACLOUD-BFTD-PROM}"
+            "uid": "bdzw6ff2bnc3kf"
           },
           "editorMode": "code",
           "expr": "rate(syncer_own_block_commit_age_ms_sum[1m]) / rate(syncer_own_block_commit_age_ms_count[1m]) ",
           "instant": false,
-          "legendFormat": "__auto",
+          "legendFormat": "{{validator}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Commit latency",
+      "title": "Commit latency(ms)",
       "type": "timeseries"
     },
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${DS_GRAFANACLOUD-BFTD-PROM}"
+        "uid": "bdzw6ff2bnc3kf"
       },
       "fieldConfig": {
         "defaults": {
@@ -327,7 +297,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_GRAFANACLOUD-BFTD-PROM}"
+            "uid": "bdzw6ff2bnc3kf"
           },
           "editorMode": "code",
           "expr": "100 - avg by (validator) (rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * 100",
@@ -342,8 +312,9 @@
     },
     {
       "datasource": {
+        "default": true,
         "type": "prometheus",
-        "uid": "${DS_GRAFANACLOUD-BFTD-PROM}"
+        "uid": "bdzw6ff2bnc3kf"
       },
       "fieldConfig": {
         "defaults": {
@@ -423,12 +394,12 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_GRAFANACLOUD-BFTD-PROM}"
+            "uid": "bdzw6ff2bnc3kf"
           },
           "editorMode": "code",
-          "expr": "rate(node_disk_io_time_seconds_total[1m])*100",
+          "expr": "rate(node_disk_io_time_seconds_total{device=\"sda\"}[1m])*100",
           "instant": false,
-          "legendFormat": "__auto",
+          "legendFormat": "{{validator}}",
           "range": true,
           "refId": "A"
         }
@@ -438,8 +409,9 @@
     },
     {
       "datasource": {
+        "default": true,
         "type": "prometheus",
-        "uid": "${DS_GRAFANACLOUD-BFTD-PROM}"
+        "uid": "bdzw6ff2bnc3kf"
       },
       "fieldConfig": {
         "defaults": {
@@ -519,12 +491,12 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_GRAFANACLOUD-BFTD-PROM}"
+            "uid": "bdzw6ff2bnc3kf"
           },
           "editorMode": "code",
-          "expr": "rate(node_disk_written_bytes_total[1m]) / 1024 / 1024",
+          "expr": "rate(node_disk_written_bytes_total{device=\"sda\"}[1m]) / 1024 / 1024",
           "instant": false,
-          "legendFormat": "__auto",
+          "legendFormat": "{{validator}}",
           "range": true,
           "refId": "A"
         }
@@ -534,8 +506,9 @@
     },
     {
       "datasource": {
+        "default": true,
         "type": "prometheus",
-        "uid": "${DS_GRAFANACLOUD-BFTD-PROM}"
+        "uid": "bdzw6ff2bnc3kf"
       },
       "fieldConfig": {
         "defaults": {
@@ -615,12 +588,12 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_GRAFANACLOUD-BFTD-PROM}"
+            "uid": "bdzw6ff2bnc3kf"
           },
           "editorMode": "code",
-          "expr": "rate(node_disk_read_bytes_total[1m]) / 1024 / 1024",
+          "expr": "rate(node_disk_read_bytes_total{device=\"sda\"}[1m]) / 1024 / 1024",
           "instant": false,
-          "legendFormat": "__auto",
+          "legendFormat": "{{validator}}",
           "range": true,
           "refId": "A"
         }
@@ -630,8 +603,9 @@
     },
     {
       "datasource": {
+        "default": true,
         "type": "prometheus",
-        "uid": "${DS_GRAFANACLOUD-BFTD-PROM}"
+        "uid": "bdzw6ff2bnc3kf"
       },
       "fieldConfig": {
         "defaults": {
@@ -645,6 +619,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -675,7 +650,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -709,12 +685,12 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_GRAFANACLOUD-BFTD-PROM}"
+            "uid": "bdzw6ff2bnc3kf"
           },
           "editorMode": "code",
           "expr": "rate(node_network_receive_bytes_total[1m]) / 1024 / 1024 * 8",
           "instant": false,
-          "legendFormat": "__auto",
+          "legendFormat": "{{validator}}",
           "range": true,
           "refId": "A"
         }
@@ -724,8 +700,9 @@
     },
     {
       "datasource": {
+        "default": true,
         "type": "prometheus",
-        "uid": "${DS_GRAFANACLOUD-BFTD-PROM}"
+        "uid": "bdzw6ff2bnc3kf"
       },
       "fieldConfig": {
         "defaults": {
@@ -739,6 +716,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -769,7 +747,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -803,12 +782,12 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_GRAFANACLOUD-BFTD-PROM}"
+            "uid": "bdzw6ff2bnc3kf"
           },
           "editorMode": "code",
           "expr": "rate(node_network_transmit_bytes_total[1m]) / 1024 / 1024 * 8",
           "instant": false,
-          "legendFormat": "__auto",
+          "legendFormat": "{{validator}}",
           "range": true,
           "refId": "A"
         }
@@ -818,8 +797,9 @@
     },
     {
       "datasource": {
+        "default": true,
         "type": "prometheus",
-        "uid": "${DS_GRAFANACLOUD-BFTD-PROM}"
+        "uid": "bdzw6ff2bnc3kf"
       },
       "fieldConfig": {
         "defaults": {
@@ -833,6 +813,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -863,7 +844,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -897,12 +879,12 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_GRAFANACLOUD-BFTD-PROM}"
+            "uid": "bdzw6ff2bnc3kf"
           },
           "editorMode": "code",
           "expr": "rate(core_last_proposed_round[1m])",
           "instant": false,
-          "legendFormat": "__auto",
+          "legendFormat": "{{validator}}",
           "range": true,
           "refId": "A"
         }
@@ -912,8 +894,9 @@
     },
     {
       "datasource": {
+        "default": true,
         "type": "prometheus",
-        "uid": "${DS_GRAFANACLOUD-BFTD-PROM}"
+        "uid": "bdzw6ff2bnc3kf"
       },
       "fieldConfig": {
         "defaults": {
@@ -927,6 +910,7 @@
             "axisLabel": "",
             "axisPlacement": "auto",
             "barAlignment": 0,
+            "barWidthFactor": 0.6,
             "drawStyle": "line",
             "fillOpacity": 0,
             "gradientMode": "none",
@@ -957,7 +941,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -991,17 +976,210 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${DS_GRAFANACLOUD-BFTD-PROM}"
+            "uid": "bdzw6ff2bnc3kf"
           },
           "editorMode": "code",
           "expr": "rate(syncer_main_loop_util_ns[1m]) / 1000 / 1000",
           "instant": false,
-          "legendFormat": "__auto",
+          "legendFormat": "{{validator}}",
           "range": true,
           "refId": "A"
         }
       ],
       "title": "Syncer main loop util (ms)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "default": true,
+        "type": "prometheus",
+        "uid": "bdzw6ff2bnc3kf"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "id": 11,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "bdzw6ff2bnc3kf"
+          },
+          "editorMode": "code",
+          "expr": "node_filesystem_avail_bytes{device=\"/dev/sda\"} / 1024 / 1024 / 1024",
+          "instant": false,
+          "legendFormat": "{{validator}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Disk available (Gb)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "bdzw6ff2bnc3kf"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      },
+      "id": 12,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "bdzw6ff2bnc3kf"
+          },
+          "editorMode": "code",
+          "expr": "node_memory_MemAvailable_bytes / 1024 / 1024/ 1024",
+          "instant": false,
+          "legendFormat": "{{validator}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Available memory (Gb)",
       "type": "timeseries"
     }
   ],
@@ -1018,6 +1196,6 @@
   "timezone": "browser",
   "title": "Bftd",
   "uid": "ddq4one7ly22of",
-  "version": 8,
+  "version": 7,
   "weekStart": ""
 }

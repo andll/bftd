@@ -12,6 +12,11 @@ pub const METRICS_ROUTE: &str = "/metrics";
 
 pub type PrometheusJoinHandle = JoinHandle<io::Result<()>>;
 
+pub use bftd_core::counter;
+pub use bftd_core::gauge;
+pub use bftd_core::histogram;
+pub use bftd_core::histogram_vec;
+
 pub async fn start_prometheus_server(
     address: SocketAddr,
     registry: &Registry,

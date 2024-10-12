@@ -1,7 +1,7 @@
-use crate::mempool::TransactionsPayloadReader;
 use bftd_core::block::Block;
 use bftd_core::consensus::Commit;
 use bftd_core::store::{BlockReader, CommitStore};
+use bftd_core::syncer::Syncer;
 use std::sync::Arc;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
@@ -13,7 +13,7 @@ pub struct CommitReader {
 
 pub struct FullCommit {
     pub info: Commit,
-    pub blocks: Vec<(Arc<Block>, TransactionsPayloadReader)>,
+    pub blocks: Vec<Arc<Block>>,
 }
 
 struct CommitReaderTask<B> {
@@ -25,9 +25,10 @@ struct CommitReaderTask<B> {
 impl CommitReader {
     pub fn start<B: BlockReader + CommitStore>(
         store: B,
-        commit_receiver: watch::Receiver<Option<u64>>,
+        syncer: &Syncer,
         index_from_included: u64,
     ) -> Self {
+        let commit_receiver = syncer.last_commit_receiver().clone();
         let (sender, receiver) = mpsc::channel(128);
         let task = CommitReaderTask {
             store,
@@ -68,13 +69,9 @@ impl<B: BlockReader + CommitStore> CommitReaderTask<B> {
                     .all_blocks()
                     .iter()
                     .map(|r| {
-                        let block = self
-                            .store
+                        self.store
                             .get(r)
-                            .expect("Block from the commit not found in the store");
-                        let payload = TransactionsPayloadReader::new_verify(block.payload_bytes())
-                            .expect("Failed to parse payload");
-                        (block, payload)
+                            .expect("Block from the commit not found in the store")
                     })
                     .collect();
                 let commit = FullCommit { info, blocks };

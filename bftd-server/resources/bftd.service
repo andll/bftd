@@ -6,7 +6,8 @@ StartLimitIntervalSec=0
 Type=simple
 Restart=no
 #RestartSec=1
-User=ubuntu
-Environment=RUST_LOG=bftd=info
-WorkingDirectory=/home/ubuntu/bftd
-ExecStart=/home/ubuntu/bftd/target/release/bftd run /home/ubuntu/data/
+User=root
+Environment=RUST_LOG=bftd=info,axum::rejection=trace
+WorkingDirectory=/root/bftd
+ExecStart=/root/bftd/target/release/bftd run /root/data/
+LimitNOFILE=65536

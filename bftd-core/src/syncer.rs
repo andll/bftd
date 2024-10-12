@@ -42,6 +42,7 @@ pub struct Syncer {
     stop: oneshot::Sender<()>,
     last_commit_receiver: watch::Receiver<Option<u64>>,
     verification_task: JoinHandle<()>,
+    committee: Arc<Committee>,
 }
 
 struct SyncerTask<S, B, C, P> {
@@ -238,6 +239,7 @@ impl Syncer {
             stop: stop_sender,
             last_commit_receiver,
             verification_task,
+            committee,
         }
     }
 
@@ -253,6 +255,10 @@ impl Syncer {
 
     pub fn last_commit_receiver(&self) -> &watch::Receiver<Option<u64>> {
         &self.last_commit_receiver
+    }
+
+    pub fn committee(&self) -> &Arc<Committee> {
+        &self.committee
     }
 }
 

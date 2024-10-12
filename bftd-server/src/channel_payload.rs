@@ -1,5 +1,5 @@
-use crate::channel_store::ChannelId;
 use anyhow::bail;
+use bftd_types::types::ChannelId;
 use bytes::{BufMut, Bytes, BytesMut};
 
 pub struct ChannelPayload {

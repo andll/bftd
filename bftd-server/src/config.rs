@@ -2,7 +2,7 @@ use bftd_core::block::ValidatorIndex;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct BftdConfig {
     pub bind: Option<String>,
     pub validator_index: ValidatorIndex,

@@ -11,7 +11,7 @@ parking_lot = "0.12.3"
 log = "0.4.21"
 env_logger = "0.11.3"
 hex = "0.4.3"
-bytes = { version = "1.6.0", features = ["serde"] }
+bytes = { version = "1.7.2", features = ["serde"] }
 futures = "0.3.28"
 async-trait = "0.1.71"
 serde = { version = "1.0.166", features = ["derive"] }
