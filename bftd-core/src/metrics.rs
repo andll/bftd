@@ -1,6 +1,8 @@
 use crate::block::ValidatorIndex;
 use crate::committee::Committee;
-use prometheus::{exponential_buckets, Histogram, HistogramVec, IntCounter, IntGauge, Registry};
+use prometheus::{
+    exponential_buckets, Histogram, HistogramVec, IntCounter, IntCounterVec, IntGauge, Registry,
+};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -8,6 +10,8 @@ pub struct Metrics {
     pub block_manager_missing_inverse_len: IntGauge,
     pub block_manager_added: IntCounter,
     pub block_manager_rejected: IntCounter,
+
+    pub rocks_store_put_bytes: IntCounterVec,
 
     pub blocks_loaded: IntGauge,
     pub blocks_loaded_bytes: IntGauge,
@@ -42,6 +46,10 @@ macro_rules! gauge (
 #[macro_export]
 macro_rules! counter (
     ($name:expr, $r:expr) => {prometheus::register_int_counter_with_registry!($name, $name, $r).unwrap()};
+);
+#[macro_export]
+macro_rules! counter_vec (
+    ($name:expr, $labels:expr, $r:expr) => {prometheus::register_int_counter_vec_with_registry!($name, $name, $labels, $r).unwrap()};
 );
 #[macro_export]
 macro_rules! histogram_vec (
@@ -79,6 +87,8 @@ impl Metrics {
             ),
             block_manager_added: counter!("block_manager_added", registry),
             block_manager_rejected: counter!("block_manager_rejected", registry),
+
+            rocks_store_put_bytes: counter_vec!("rocks_store_put_bytes", &["cf"], registry),
 
             blocks_loaded: gauge!("blocks_loaded", registry),
             blocks_loaded_bytes: gauge!("blocks_loaded_bytes", registry),

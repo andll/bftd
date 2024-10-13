@@ -76,6 +76,13 @@ impl RocksStore {
     fn block_view(&self) -> &ColumnFamily {
         self.db.cf_handle("block_view").unwrap()
     }
+
+    fn report_put_len(&self, cf: &'static str, len: usize) {
+        self.metrics
+            .rocks_store_put_bytes
+            .with_label_values(&[cf])
+            .inc_by(len as u64);
+    }
 }
 
 impl BlockStore for RocksStore {
@@ -88,6 +95,10 @@ impl BlockStore for RocksStore {
         let index_key = block.reference().author_round_hash_encoding();
         let block_key = block.reference().round_author_hash_encoding();
         let block_view = bincode::serialize(&block_view).expect("Failed to serialize block view");
+        self.report_put_len("index", block_key.len() + index_key.len());
+        self.report_put_len("block_view", block_key.len() + block_view.len());
+        self.report_put_len("blocks", block_key.len() + block.data().len());
+
         self.db
             .put_cf(self.index(), &index_key, &block_key)
             .expect("Storage operation failed");
@@ -189,6 +200,7 @@ impl CommitStore for RocksStore {
     fn store_commit(&self, commit: &Commit) {
         let key = commit.index().to_be_bytes();
         let commit = bincode::serialize(commit).expect("Serialization failed");
+        self.report_put_len("commits", key.len() + commit.len());
         self.db
             .put_cf(self.commits(), &key, &commit)
             .expect("Storage operation failed");
@@ -232,6 +244,7 @@ impl CommitStore for RocksStore {
             }
         }
         let v = index.to_be_bytes();
+        self.report_put_len("block_commits", k.len() + v.len());
         self.db
             .put_cf(self.block_commits(), &k, &v)
             .expect("Storage operation failed");
